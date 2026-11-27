@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wx Analysis Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: operational, clinical — a forecaster's briefing console.
+   IDEA: a Windy-style live field map bolted to printed OWS products (Skew-T, meteogram) that share one cursor in X Y Z T.
+   PICTURE: the full-bleed animated wind map, then two paper-white charts side by side.
+   COLOUR and TYPE: night slate shell, paper charts, one hot-pink cursor colour shared by every view; Space Grotesk titles, IBM Plex Sans Condensed data.
+   LAYOUT: state strip, map band, Skew-T | meteogram; stacks below 1000px. */
+:root{color-scheme:light dark;--bg:light-dark(#e9edf0,#0b1015);--panel:light-dark(#ffffff,#121a21);--line:light-dark(#cfd6dc,#24313c);--ink:light-dark(#10202b,#e3ebf0);--mute:light-dark(#5a6b77,#8da0ad);--paper:#fbfaf6;--acc:#ff2e7e;--acc2:#ff8ab4}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 "IBM Plex Sans Condensed",system-ui,sans-serif;overflow-x:clip}
+h1,h2{font-family:"Space Grotesk",system-ui,sans-serif;font-weight:600;margin:0;line-height:1.05}
+h1{font-size:20px;letter-spacing:-.01em}h2{font-size:17px}
+button,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding:10px max(2vw,12px);background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{display:flex;flex-direction:column;margin-right:auto}
+.brand small{color:var(--mute);font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:grid;grid-template-columns:auto auto;align-items:baseline;gap:0 8px;padding:5px 10px 6px;border:1px solid var(--line);border-radius:8px;background:var(--bg);min-height:44px}
+.chip b{font:600 13px "Space Grotesk",sans-serif;color:var(--acc);grid-row:span 2;align-self:center}
+.chip span{font-size:15px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
+.chip small{font-size:13px;color:var(--mute);white-space:nowrap}
+.chip.flash{animation:fl .5s}@keyframes fl{from{border-color:var(--acc)}}
+/* map */
+.map{position:relative;height:clamp(380px,58vh,720px);background:#0b0f14;overflow:hidden;touch-action:none;user-select:none;cursor:crosshair}
+.map canvas{position:absolute;inset:0;width:100%;height:100%}
+.map.drag{cursor:grabbing}
+.ov{position:absolute;z-index:3;color:#eef3f6}
+.glass{background:rgba(14,20,27,.82);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.12);border-radius:10px}
+.layers{top:12px;right:12px;display:flex;flex-direction:column;padding:4px;gap:2px}
+.layers button{all:unset;cursor:pointer;padding:8px 12px;border-radius:7px;font-size:14px;min-height:28px;display:flex;align-items:center;gap:8px}
+.layers button:hover{background:rgba(255,255,255,.08)}
+.layers button[aria-pressed=true]{background:var(--acc);color:#fff}
+.layers button:focus-visible{outline:2px solid #fff}
+.layers hr{border:0;border-top:1px solid rgba(255,255,255,.14);margin:3px 4px}
+.layers .tog[aria-pressed=true]{background:rgba(255,255,255,.16);color:#fff}
+.ladder{left:12px;top:62px;height:calc(100% - 150px);display:flex;flex-direction:column;padding:4px 0;width:70px;overflow:hidden}
+.ladder div{flex:1 1 0;min-height:0;max-height:20px;display:flex;align-items:center;justify-content:flex-end;padding:0 9px;font-size:12px;color:#9fb0bc;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ladder div.minor{display:none}.ladder.tall div.minor{display:flex}.ladder div.on{display:flex;background:var(--acc);color:#fff;font-weight:600}
+.ladder p{margin:0 0 3px;font-size:11px;text-align:center;color:#c9d4dc;line-height:1.15}
+.zoom{left:12px;top:12px;display:flex;gap:6px;align-items:center}
+.zoom button,.zoom select{background:rgba(14,20,27,.82);border:1px solid rgba(255,255,255,.14);color:#eef3f6;border-radius:8px;min-width:40px;height:40px;font-size:18px;cursor:pointer}
+.zoom select{font-size:14px;padding:0 8px}
+.legend{left:12px;bottom:12px;padding:8px 10px 6px;width:min(320px,calc(100% - 24px))}
+.legend .lt{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px}
+.legend canvas{position:static;display:block;width:100%;height:10px;border-radius:3px}
+.legend .tk{position:relative;height:16px;font-size:12px;color:#b8c6d0;font-variant-numeric:tabular-nums}
+.legend .tk span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.when{left:50%;bottom:12px;transform:translateX(-50%);padding:7px 14px;font-size:14px;white-space:nowrap;text-align:center}
+.when b{color:#fff;font-weight:600}.when small{display:block;font-size:12px;color:#9fb0bc}
+.pin{position:absolute;z-index:2;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:3px solid var(--acc);background:rgba(255,46,126,.25);box-shadow:0 0 0 2px rgba(0,0,0,.5);pointer-events:none}
+.bubble{position:absolute;z-index:4;transform:translate(-50%,calc(-100% - 16px));padding:7px 11px;font-size:13px;line-height:1.35;white-space:nowrap;pointer-events:none;color:#eef3f6}
+.bubble b{font-size:15px;color:#fff}
+.bubble::after{content:"";position:absolute;left:50%;bottom:-7px;margin-left:-7px;border:7px solid transparent;border-bottom:0;border-top-color:rgba(14,20,27,.85)}
+/* lower */
+.lower{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:12px;padding:12px max(2vw,12px)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.ch{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px}
+.ch .sub{font-size:13px;color:var(--mute);font-variant-numeric:tabular-nums}
+.ch .ctl{margin-left:auto;display:flex;gap:6px;align-items:center}
+.btn{background:var(--bg);border:1px solid var(--line);border-radius:8px;min-height:36px;padding:0 12px;cursor:pointer;font-weight:600;font-size:14px}
+.btn[aria-pressed=true]{background:var(--acc);border-color:var(--acc);color:#fff}
+.fig{position:relative;height:clamp(440px,64vh,700px);background:var(--paper);border-radius:6px;overflow:hidden;cursor:ns-resize;touch-action:none}
+#metFig{cursor:crosshair}
+.fig canvas{position:absolute;inset:0;width:100%;height:100%}
+.hint{font-size:13px;color:var(--mute)}
+.hint kbd{font:600 12px "IBM Plex Sans Condensed";border:1px solid var(--line);border-radius:4px;padding:0 4px}
+.idx{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.idx div{background:var(--panel);padding:5px 8px}
+.idx small{display:block;font-size:12px;color:var(--mute)}
+.idx span{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+footer{padding:4px max(2vw,12px) 24px;font-size:13px;color:var(--mute);max-width:1100px}
+footer details{margin-top:6px}footer summary{cursor:pointer;color:var(--ink)}
+footer code{font-size:12px}
+@media(max-width:1000px){.lower{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){.ladder{display:none}.layers{flex-direction:row;flex-wrap:wrap;top:auto;bottom:118px;right:8px;left:8px;justify-content:center}.layers hr{display:none}.layers button{padding:6px 9px;font-size:13px}.when{bottom:auto;top:60px}.chip{flex:1 1 140px}.chip span{font-size:14px;white-space:normal}.map{height:72vh}.fig{height:520px}#metFig{height:640px}}
+@media(prefers-reduced-motion:reduce){.chip.flash{animation:none}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><h1>Wx Analysis Console</h1><small>Synthetic model run · init Fri 27 Nov 2026 12Z · 0.5° · 21 levels · F000–F120</small></div>
+  <div class="chips" aria-live="polite">
+    <div class="chip" id="chipXY"><b>Y X</b><span id="vXY">—</span><small>set on the map</small></div>
+    <div class="chip" id="chipZ"><b>Z</b><span id="vZ">—</span><small>set on the Skew-T or meteogram</small></div>
+    <div class="chip" id="chipT"><b>T</b><span id="vT">—</span><small>set on the meteogram</small></div>
+  </div>
+</header>
+
+<section class="map" id="map" aria-label="Weather map. Click to choose the point for the Skew-T and meteogram.">
+  <canvas id="cField"></canvas><canvas id="cPart"></canvas><canvas id="cLines"></canvas>
+  <div class="pin" id="pin"></div>
+  <div class="bubble glass" id="bubble"></div>
+  <div class="ov zoom">
+    <button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button>
+    <select id="goto" aria-label="Go to station"><option value="">Station…</option></select>
+  </div>
+  <div class="ov layers glass" id="layers" role="group" aria-label="Map layer"></div>
+  <div class="ov ladder glass" id="ladder" aria-label="Level shown (set from Skew-T or meteogram)"></div>
+  <div class="ov legend glass"><div class="lt"><span id="lgName"></span><span id="lgUnit"></span></div><canvas id="lgBar" width="300" height="10"></canvas><div class="tk" id="lgTicks"></div></div>
+  <div class="ov when glass" id="when"></div>
+</section>
+
+<section class="lower">
+  <article class="card">
+    <div class="ch"><h2>Skew-T log-P</h2><span class="sub" id="skSub"></span></div>
+    <div class="fig" id="skewFig" tabindex="0" aria-label="Skew-T diagram. Click or drag vertically, or use the up and down arrow keys, to set the level."><canvas id="cSkew"></canvas><canvas id="cSkewO"></canvas></div>
+    <div class="hint">Click or drag up and down to set <b>Z</b>. With the chart focused, <kbd>↑</kbd> <kbd>↓</kbd> step through levels.</div>
+    <div class="idx" id="idx"></div>
+  </article>
+  <article class="card">
+    <div class="ch"><h2>Meteogram</h2><span class="sub" id="mtSub"></span>
+      <div class="ctl"><button class="btn" id="play" aria-pressed="false">Play</button></div></div>
+    <div class="fig" id="metFig" tabindex="0" aria-label="Meteogram. Click or drag to set time; in the cross-section, the vertical position sets the level. Arrow keys step time and level."><canvas id="cMet"></canvas><canvas id="cMetO"></canvas></div>
+    <div class="hint">Click or drag anywhere to set <b>T</b>. In the time–height panel, the height you click also sets <b>Z</b>. Keys: <kbd>←</kbd> <kbd>→</kbd> time, <kbd>↑</kbd> <kbd>↓</kbd> level.</div>
+  </article>
+</section>
+
+<footer>
+  All values come from an analytic model of the atmosphere built into the page. It has a travelling baroclinic wave, a developing cyclone, terrain, a diurnal cycle and frictional surface winds, so the views have realistic structure to interact with. It is sample data, not a forecast; this sandbox blocks live data feeds.
+  <details><summary>Plugging in real data</summary>
+  <p>Every view reads through two functions: <code>column(lon, lat, t)</code> returns a sounding (levels with p, z, T, Td, u, v), and <code>grid(levelIndex, t)</code> returns 0.5° fields for the map. Replace their bodies with lookups into decoded GRIB2 (GFS, GALWEM) or Open-Meteo pressure-level JSON, and the shared X Y Z T state and all three views keep working unchanged.</p></details>
+</footer>
+
+<script>
+{
+const GEO=/*GEO*/;
+/* ================= constants & helpers ================= */
+const LON0=-135,LON1=-55,LAT0=15,LAT1=62,NX=161,NY=95,DG=0.5;
+const PL=[1000,975,950,925,900,850,800,750,700,650,600,550,500,450,400,350,300,250,200,150,100];
+const NT=121,INIT=Date.UTC(2026,10,27,12);
+const g=9.80665,Rd=287.04,Cp=1004.6,Lv=2.501e6,EPS=0.622,OM=7.292e-5,D2R=Math.PI/180,KT=1.943844;
+const clamp=(x,a,b)=>x<a?a:x>b?b:x,sig=x=>1/(1+Math.exp(-x)),lerp=(a,b,f)=>a+(b-a)*f;
+const box=(x,a,b,w)=>sig((x-a)/w)*sig((b-x)/w);
+const DOW=['SUN','MON','TUE','WED','THU','FRI','SAT'],MON=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+const pad=(n,w=2)=>String(n).padStart(w,'0');
+const vt=t=>new Date(INIT+t*3600e3);
+const fmtT=t=>{const d=vt(t);return `${DOW[d.getUTCDay()]} ${pad(d.getUTCDate())} ${MON[d.getUTCMonth()]} ${pad(d.getUTCHours())}Z`};
+const fT=t=>'F'+pad(t,3);
+const fmtLL=(la,lo)=>`${Math.abs(la).toFixed(2)}°${la>=0?'N':'S'} ${Math.abs(lo).toFixed(2)}°${lo>=0?'E':'W'}`;
+const levName=li=>li?PL[li-1]+' hPa':'Surface';
+const esat=T=>6.112*Math.exp(17.67*T/(T+243.5));
+const tdFromE=e=>{const a=Math.log(e/6.112);return 243.5*a/(17.67-a)};
+const rhf=(T,Td)=>clamp(100*esat(Td)/esat(T),0,100);
+const wsat=(p,T)=>{const e=esat(T);return EPS*e/Math.max(p-e,1)};
+const cloudF=rh=>Math.pow(clamp((rh-72)/26,0,1),1.3);
+const dirSpd=(u,v)=>[(Math.atan2(-u,-v)/D2R+360)%360,Math.hypot(u,v)];
+const STN=[['KOFF','Offutt AFB',41.12,-95.91],['KBLV','Scott AFB',38.55,-89.85],['KBAD','Barksdale AFB',32.50,-93.66],['KDMA','Davis-Monthan AFB',32.17,-110.88],['KORD','Chicago',41.98,-87.90],['KDEN','Denver',39.86,-104.67],['KDFW','Dallas–Fort Worth',32.90,-97.04],['KATL','Atlanta',33.64,-84.43],['KMSP','Minneapolis',44.88,-93.22],['KSEA','Seattle',47.45,-122.31],['KBOS','Boston',42.36,-71.01],['KSLC','Salt Lake City',40.79,-111.98],['KMIA','Miami',25.79,-80.29],['CYYC','Calgary',51.12,-114.02]];
+const stnNear=(la,lo)=>STN.find(s=>Math.abs(s[2]-la)<0.05&&Math.abs(s[3]-lo)<0.05);
+
+/* ================= land mask & terrain ================= */
+const LAND=new Float32Array(NX*NY);{let v=+GEO.m0,k=0;for(const n of GEO.m){LAND.fill(v,k,k+n);k+=n;v=1-v}}
+function landAt(lon,lat){const fx=clamp((lon-LON0)/DG,0,NX-1.001),fy=clamp((lat-LAT0)/DG,0,NY-1.001),i=fx|0,j=fy|0,a=fx-i,b=fy-j,o=j*NX+i;return (LAND[o]*(1-a)+LAND[o+1]*a)*(1-b)+(LAND[o+NX]*(1-a)+LAND[o+NX+1]*a)*b}
+function terrain(lon,lat){
+  const l=landAt(lon,lat);if(l<0.01)return 0;
+  const rx=-106-Math.max(0,lat-40)*0.95-Math.max(0,40-lat)*0.2;
+  let h=2300*Math.exp(-(((lon-rx)/4.2)**2))*box(lat,29,63,1.5);
+  h+=1300*box(lon,-120,-104,1.2)*box(lat,33,47,1.2);
+  h+=1500*Math.exp(-(((lon-(-119.8-(lat-38)*0.22))/1.3)**2))*box(lat,35,50,1);
+  h+=1700*box(lon,-107,-97.5,1.2)*box(lat,17,29,1.2);
+  h+=650*Math.exp(-(((lon-(-82+(lat-37)*1.15))/2)**2))*box(lat,33.5,46,1);
+  h+=1100*(1-sig((lon+101)/2.2))*sig((lon+117)/1.5)*box(lat,28,54,2);
+  return Math.max(0,h)*clamp(l*1.2,0,1);
+}
+
+/* ================= synthetic atmosphere =================
+   Everything below is the data source. column() and grid() are the only entry points the views use. */
+function zstd(p){return p>226.32?44330.8*(1-Math.pow(p/1013.25,0.190263)):11000+(Rd*216.65/g)*Math.log(226.32/p)}
+function Hb(p){const a=Math.log(p/250)/0.8;return 30+650*Math.exp(-a*a)}
+function Az(p){const b=35+190*(1-p/1000);return p<250?b*Math.sqrt(p/250):b}
+const ATP=[[1000,6],[850,7],[700,7],[500,5.5],[400,4],[300,1],[250,-1],[200,-3],[100,-1]];
+function AT(p){for(let i=1;i<ATP.length;i++)if(p>=ATP[i][0]){const[p0,a0]=ATP[i-1],[p1,a1]=ATP[i];return a0+(a1-a0)*Math.log(p0/p)/Math.log(p0/p1)}return -1}
+function ctx(lon,lat,t){
+  const cl=Math.cos(lat*D2R),a1=1+0.35*Math.sin(Math.PI*Math.min(t,100)/100);
+  const xT1=-119+0.34*t,th1=2*Math.PI/55*(lon-xT1)+Math.PI,G1=Math.exp(-(((lat-44)/11)**2));
+  const xT2=-101+0.55*t,th2=2*Math.PI/26*(lon-xT2)+Math.PI,G2=Math.exp(-(((lat-50+0.04*t)/7)**2));
+  const cx=xT1+9+0.06*t,cy=37+0.09*t,ca=25+70*Math.sin(Math.PI*Math.min(t,110)/110);
+  const dx=(lon-cx)*cl,dy=lat-cy;
+  const n=0.5*Math.sin(0.83*lon+0.21*t+1.3*Math.sin(0.5*lat))*Math.sin(0.61*lat-0.13*t+0.9)+0.5*Math.sin(1.7*lon-0.9*lat+0.35*t);
+  let W=Math.pow(Math.max(0,-Math.sin(th1+0.27)),2.5)*G1*a1*0.8+Math.exp(-(((dx-2.5)/6)**2+((dy-1.5)/4.5)**2))*ca/95+Math.pow(Math.max(0,-Math.sin(th2)),3)*G2*0.4;
+  W=clamp(W*(0.85+0.3*n)+0.06*n,0,1);
+  const m=clamp(-Math.sin(th1+0.3)*G1*1.2+0.6*Math.exp(-(((dx-2)/7)**2+((dy+1)/6)**2))*ca/95,-1,1);
+  const land=landAt(lon,lat),h=terrain(lon,lat);
+  const src=clamp(1-0.35*(1-land)-0.45*sig((33-lat)/3)*(0.5+0.5*Math.max(0,m)),0.3,1);
+  const sh=(((t+12+lon/15)%24)+24)%24,dA=(0.25+0.75*land)*5.5*(1-0.65*W)*Math.sin(2*Math.PI*(sh-9)/24);
+  return{lon,lat,t,cl,a1,th1,G1,th2,G2,cx,ca,dy,W,m,land,h,src,dA,sh,T0:297-0.72*(lat-20),ztp:Math.max(8500,16000-230*(lat-20))};
+}
+function zPert(c,p){const s=1-p/1000,tl=0.75*s,az=Az(p),dxp=(c.lon-(c.cx-4*s))*c.cl,r2=(dxp/6.5)**2+(c.dy/5.5)**2;
+  return az*c.a1*Math.cos(c.th1+tl)*c.G1+0.4*az*Math.cos(c.th2+0.7*tl)*c.G2-c.ca*(1-0.45*s)*Math.exp(-r2)}
+function zTot(c,p){return zstd(p)-Hb(p)*Math.tanh((c.lat-38)/12)+zPert(c,p)}
+function mslpC(c){return 1013.25+(zTot(c,1000)-zstd(1000))/8.3}
+function Tbase(c,z){return z<c.ztp?c.T0-0.0062*z:c.T0-0.0062*c.ztp+0.0012*(z-c.ztp)}
+function Tp(c,p){const tl=0.375*(1-p/1000),at=AT(p);return at*(-Math.sin(c.th1+tl))*c.G1*c.a1+0.4*at*(-Math.sin(c.th2+tl))*c.G2-5.5*Math.max(0,c.m)*Math.exp(-(((p-520)/170)**2))*sig((41-c.lat)/3)}
+function Dd(c,p,z){let d=4+22*Math.pow(Math.max(0,1-p/1000),1.3);d*=c.m>0?1-0.55*c.m:1-0.9*c.m;if(p>700)d*=c.src;
+  d*=1-0.88*c.W*Math.exp(-(((p-700)/330)**2));d+=25*clamp((z-c.ztp)/1800,0,1);return Math.max(0.3,d)}
+function diurn(c,zagl){return c.dA*(c.dA>0?Math.exp(-zagl/1000):Math.exp(-zagl/220))}
+function fric(u,v,zagl,land){if(zagl>=1200)return[u,v];const q=zagl/1200,fac=lerp(land>0.5?0.5:0.68,1,q),a=(land>0.5?32:18)*(1-q)*D2R,cs=Math.cos(a),sn=Math.sin(a);return[(u*cs-v*sn)*fac,(u*sn+v*cs)*fac]}
+function capw(w){const s=Math.hypot(w[0],w[1]);return s>90?[w[0]*90/s,w[1]*90/s]:w}
+function geo(zE,zW,zN,zS,lat,d){const f=2*OM*Math.sin(Math.max(lat,16)*D2R);return[-g/f*(zN-zS)/(2*d*111195),g/f*(zE-zW)/(2*d*111195*Math.cos(lat*D2R))]}
+function sfcState(c,ps,u,v){
+  const Tb=Tbase(c,c.h)+Tp(c,ps)-273.15,T=Tb+c.dA,Td=Math.min(Tb-Dd(c,ps,c.h),T);
+  const T850=Tbase(c,zstd(850))+Tp(c,850)-273.15+diurn(c,Math.max(0,zTot(c,850)-c.h));
+  const d850=Dd(c,850,zstd(850));let pr=3.2*Math.pow(c.W,2.2)*clamp(1-d850/7,0,1);if(pr<0.08)pr=0;
+  const spd=Math.hypot(u,v);
+  return{T,Td,u,v,rh:rhf(T,Td),pr,snow:pr>0&&T850<-1&&T<1.5,gust:spd*(1.35+0.3*Math.max(0,c.dA)/5.5)};
+}
+function lvl(c,p,ps){const z=zstd(p),zg=zTot(c,p),zagl=Math.max(0,zg-c.h),Tb=Tbase(c,z)+Tp(c,p)-273.15,T=Tb+diurn(c,zagl),Td=Math.min(Tb-Dd(c,p,z),T),rh=rhf(T,Td);
+  return{p,z:zg,zagl,T,Td,rh,cf:cloudF(rh),bg:p>ps}}
+const colCache=new Map();
+function column(lon,lat,t){
+  const key=lon.toFixed(3)+','+lat.toFixed(3)+','+t;let r=colCache.get(key);if(r)return r;
+  const c=ctx(lon,lat,t),d=0.5,cE=ctx(lon+d,lat,t),cW=ctx(lon-d,lat,t),cN=ctx(lon,lat+d,t),cS=ctx(lon,lat-d,t);
+  const mslp=mslpC(c),ps=mslp*Math.exp(-c.h/8200);
+  const lev=PL.map(p=>{const L=lvl(c,p,ps);const w=capw(fric(...geo(zTot(cE,p),zTot(cW,p),zTot(cN,p),zTot(cS,p),lat,d),L.zagl,c.land));L.u=w[0];L.v=w[1];return L});
+  const w0=fric(...geo(zTot(cE,1000),zTot(cW,1000),zTot(cN,1000),zTot(cS,1000),lat,d),0,c.land);
+  const s=sfcState(c,ps,w0[0],w0[1]);
+  const cfs=lev.filter(L=>!L.bg).map(L=>L.cf);
+  s.tcc=clamp(Math.max(0,...cfs)*0.7+0.3*(1-cfs.reduce((a,f)=>a*(1-f),1)),0,1);
+  Object.assign(s,{p:ps,z:c.h,zagl:0});
+  r={lon,lat,t,h:c.h,ps,mslp,sfc:s,lev,sh:c.sh};
+  if(colCache.size>6000)colCache.clear();colCache.set(key,r);return r;
+}
+const gridCache=new Map();
+function grid(li,t){
+  const key=li+'_'+t;let G=gridCache.get(key);if(G)return G;
+  const N=NX*NY,p=li?PL[li-1]:1000,C=new Array(N),Zw=new Float32Array(N);
+  G={li,t,T:new Float32Array(N),RH:new Float32Array(N),U:new Float32Array(N),V:new Float32Array(N),S:new Float32Array(N),CF:new Float32Array(N),PR:new Float32Array(N),SN:new Uint8Array(N),ISO:new Float32Array(N),BG:new Uint8Array(N)};
+  for(let j=0;j<NY;j++)for(let i=0;i<NX;i++){const k=j*NX+i,c=ctx(LON0+i*DG,LAT0+j*DG,t);C[k]=c;Zw[k]=zTot(c,p)}
+  const dz=(k,i,j)=>{const iE=Math.min(i+1,NX-1),iW=Math.max(i-1,0),jN=Math.min(j+1,NY-1),jS=Math.max(j-1,0);return[Zw[j*NX+iE],Zw[j*NX+iW],Zw[jN*NX+i],Zw[jS*NX+i],(iE-iW)/2,(jN-jS)/2]};
+  for(let j=0;j<NY;j++)for(let i=0;i<NX;i++){
+    const k=j*NX+i,c=C[k],lat=c.lat,[zE,zW,zN,zS,fx,fy]=dz(k,i,j);
+    const f=2*OM*Math.sin(Math.max(lat,16)*D2R);
+    const ug=-g/f*(zN-zS)/(2*fy*DG*111195),vg=g/f*(zE-zW)/(2*fx*DG*111195*Math.cos(lat*D2R));
+    const mslp=mslpC(c),ps=mslp*Math.exp(-c.h/8200);
+    if(!li){
+      const w=fric(ug,vg,0,c.land),s=sfcState(c,ps,w[0],w[1]);
+      G.T[k]=s.T;G.RH[k]=s.rh;G.U[k]=w[0];G.V[k]=w[1];G.ISO[k]=mslp;
+      let mx=0,pr=1;for(const pp of[925,850,700,500,400,300]){if(pp>ps)continue;const L=lvl(c,pp,ps);mx=Math.max(mx,L.cf);pr*=1-L.cf}
+      G.CF[k]=clamp(mx*0.7+0.3*(1-pr),0,1);G.PR[k]=s.pr;G.SN[k]=s.snow?1:0;
+    }else{
+      const L=lvl(c,p,ps),w=capw(fric(ug,vg,L.zagl,c.land));
+      G.T[k]=L.T;G.RH[k]=L.rh;G.U[k]=w[0];G.V[k]=w[1];G.ISO[k]=L.z;G.CF[k]=L.cf;G.BG[k]=L.bg?1:0;
+      const s=sfcState(c,ps,0,0);G.PR[k]=s.pr;G.SN[k]=s.snow?1:0;
+    }
+    G.S[k]=Math.hypot(G.U[k],G.V[k]);
+  }
+  if(gridCache.size>40)gridCache.delete(gridCache.keys().next().value);
+  gridCache.set(key,G);return G;
+}
+function sampleG(A,lon,lat){const fx=(lon-LON0)/DG,fy=(lat-LAT0)/DG;if(fx<0||fy<0||fx>NX-1||fy>NY-1)return NaN;const i=Math.min(fx|0,NX-2),j=Math.min(fy|0,NY-2),a=fx-i,b=fy-j,o=j*NX+i;return (A[o]*(1-a)+A[o+1]*a)*(1-b)+(A[o+NX]*(1-a)+A[o+NX+1]*a)*b}
+
+/* ================= shared state store ================= */
+const S={lat:41.12,lon:-95.91,z:13,t:0};
+const subs=[];
+function setState(patch,src){const ch={};for(const k in patch){let v=patch[k];if(k==='z')v=clamp(Math.round(v),0,PL.length);if(k==='t')v=clamp(Math.round(v),0,NT-1);if(k==='lat')v=clamp(v,LAT0+0.5,LAT1-0.5);if(k==='lon')v=clamp(v,LON0+0.5,LON1-0.5);if(S[k]!==v){S[k]=v;ch[k]=1}}
+  if(Object.keys(ch).length)for(const f of subs)f(ch,src)}
+const subscribe=f=>subs.push(f);
+const series=()=>{const out=[];for(let t=0;t<NT;t++)out.push(column(S.lon,S.lat,t));return out};
+
+/* ================= canvas helper ================= */
+function fitCanvas(cv){const r=cv.getBoundingClientRect(),dpr=Math.min(window.devicePixelRatio||1,2),w=Math.max(1,Math.round(r.width*dpr)),h=Math.max(1,Math.round(r.height*dpr));if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}const x=cv.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return{x,W:r.width,H:r.height,dpr}}
+const FONT='"IBM Plex Sans Condensed",system-ui,sans-serif';
+function barb(x,cx,cy,u,v,L,col){
+  const kt=Math.hypot(u,v)*KT;x.strokeStyle=col;x.fillStyle=col;x.lineWidth=1.2;
+  if(kt<2.5){x.beginPath();x.arc(cx,cy,3,0,7);x.stroke();return}
+  const s=Math.hypot(u,v),sx=-u/s,sy=v/s; // screen dir toward where wind comes from
+  const px=-sy,py=sx; // feather side (left of staff in screen space => north for westerly)
+  const ex=cx+sx*L,ey=cy+sy*L;x.beginPath();x.moveTo(cx,cy);x.lineTo(ex,ey);x.stroke();
+  let r=Math.round(kt/5)*5,pos=0;const step=L*0.16,fl=L*0.42;
+  while(r>=50){const ax=ex-sx*pos,ay=ey-sy*pos;x.beginPath();x.moveTo(ax,ay);x.lineTo(ax+px*fl-sx*step*0.5,ay+py*fl-sy*step*0.5);x.lineTo(ax-sx*step,ay-sy*step);x.fill();pos+=step*1.4;r-=50}
+  while(r>=10){const ax=ex-sx*pos,ay=ey-sy*pos;x.beginPath();x.moveTo(ax,ay);x.lineTo(ax+px*fl+sx*step*0.6,ay+py*fl+sy*step*0.6);x.stroke();pos+=step;r-=10}
+  if(r>=5){if(pos===0)pos=step;const ax=ex-sx*pos,ay=ey-sy*pos;x.beginPath();x.moveTo(ax,ay);x.lineTo(ax+px*fl*0.5+sx*step*0.3,ay+py*fl*0.5+sy*step*0.3);x.stroke()}
+}
+function contour(F,nx,ny,lev,X,Y,out){ // marching squares, F(i,j)
+  for(let j=0;j<ny-1;j++)for(let i=0;i<nx-1;i++){
+    const a=F(i,j),b=F(i+1,j),c=F(i+1,j+1),d=F(i,j+1);if(a!==a||b!==b||c!==c||d!==d)continue;
+    const idx=(a>lev)|((b>lev)<<1)|((c>lev)<<2)|((d>lev)<<3);if(idx===0||idx===15)continue;
+    const e=[];const it=(v0,v1)=>(lev-v0)/(v1-v0);
+    if((a>lev)!==(b>lev)){const f=it(a,b);e.push([X(i+f,j),Y(i+f,j)])}
+    if((b>lev)!==(c>lev)){const f=it(b,c);e.push([X(i+1,j+f),Y(i+1,j+f)])}
+    if((c>lev)!==(d>lev)){const f=it(d,c);e.push([X(i+f,j+1),Y(i+f,j+1)])}
+    if((d>lev)!==(a>lev)){const f=it(a,d);e.push([X(i,j+f),Y(i,j+f)])}
+    if(e.length===2)out.push(e[0],e[1]);else if(e.length===4){out.push(e[0],e[1],e[2],e[3])}
+  }
+}
+
+/* ================= palettes ================= */
+const LAYERS={
+  wind:{name:'Wind',unit:'kt',f:'S',stops:[[0,[98,113,183]],[3,[57,97,159]],[6,[74,148,169]],[9,[77,141,123]],[12,[83,165,83]],[15,[53,159,53]],[18,[167,157,81]],[21,[159,127,58]],[24,[161,108,92]],[27,[129,58,78]],[30,[175,80,136]],[33,[117,74,147]],[40,[109,97,163]],[50,[68,105,141]],[60,[92,144,152]],[80,[125,68,165]],[100,[231,215,215]]],ticks:[0,10.29,20.58,30.87,41.16,51.44],tl:v=>Math.round(v*KT)},
+  temp:{name:'Temperature',unit:'°C',f:'T',stops:[[-70,[115,70,105]],[-55,[202,172,195]],[-40,[162,70,145]],[-25,[143,89,169]],[-15,[157,219,217]],[-8,[106,191,181]],[-4,[100,166,189]],[0,[93,133,198]],[1,[68,125,99]],[10,[128,147,24]],[21,[243,183,4]],[30,[232,83,25]],[47,[71,14,0]]],ticks:[-60,-40,-20,0,20,40],tl:v=>v},
+  rh:{name:'Humidity',unit:'%',f:'RH',stops:[[0,[173,85,56]],[30,[173,110,56]],[40,[173,146,56]],[60,[105,173,56]],[80,[56,173,121]],[90,[56,174,173]],[100,[56,87,173]]],ticks:[0,20,40,60,80,100],tl:v=>v},
+  clouds:{name:'Clouds',unit:'%',f:'CF',stops:[[0,[38,52,70]],[0.2,[70,84,104]],[0.5,[132,142,156]],[0.8,[196,201,208]],[1,[240,242,245]]],ticks:[0,0.25,0.5,0.75,1],tl:v=>Math.round(v*100)},
+  precip:{name:'Rain, snow',unit:'mm/h',f:'PR',stops:[[0,[42,52,72]],[0.15,[58,96,150]],[0.6,[60,150,170]],[1.5,[70,180,110]],[3,[230,220,60]],[5,[235,140,40]],[8,[205,40,60]],[12,[160,40,170]]],ticks:[0,1.5,3,5,8,12],tl:v=>v}
+};
+for(const k in LAYERS){const L=LAYERS[k],lo=L.stops[0][0],hi=L.stops[L.stops.length-1][0],lut=new Uint8ClampedArray(256*3);
+  for(let i=0;i<256;i++){const v=lo+(hi-lo)*i/255;let s=1;while(s<L.stops.length-1&&L.stops[s][0]<v)s++;const[a,ca]=L.stops[s-1],[b,cb]=L.stops[s],f=clamp((v-a)/(b-a||1),0,1);for(let q=0;q<3;q++)lut[i*3+q]=ca[q]+(cb[q]-ca[q])*f}
+  Object.assign(L,{lo,hi,lut})}
+const SNOWLUT=(()=>{const l=new Uint8ClampedArray(256*3);for(let i=0;i<256;i++){const f=Math.min(1,i/90);l[i*3]=42+f*(225-42);l[i*3+1]=52+f*(120-52);l[i*3+2]=72+f*(235-72)}return l})();
+let layer='wind',showIso=true,showPart=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ================= MAP ================= */
+const mapEl=document.getElementById('map'),cF=document.getElementById('cField'),cL=document.getElementById('cLines'),cP=document.getElementById('cPart');
+const mY=lat=>Math.log(Math.tan(Math.PI/4+lat*D2R/2))/D2R,imY=y=>(2*Math.atan(Math.exp(y*D2R))-Math.PI/2)/D2R;
+const view={clon:-95,cy:mY(39),k:10};let MW=0,MH=0;
+const proj=(lon,lat)=>[MW/2+(lon-view.clon)*view.k,MH/2-(mY(lat)-view.cy)*view.k];
+const unproj=(x,y)=>[view.clon+(x-MW/2)/view.k,imY(view.cy-(y-MH/2)/view.k)];
+function fitView(){const r=mapEl.getBoundingClientRect();MW=r.width;MH=r.height;const kx=MW/(LON1-LON0-14),ky=MH/(mY(LAT1-3)-mY(LAT0+5));view.k=Math.max(kx,ky)*0.98;clampView()}
+function clampView(){view.k=clamp(view.k,Math.max(MW/(LON1-LON0),MH/(mY(LAT1)-mY(LAT0)))*0.9,140);const hw=MW/2/view.k,hh=MH/2/view.k;view.clon=clamp(view.clon,LON0+Math.min(hw,40),LON1-Math.min(hw,40));view.cy=clamp(view.cy,mY(LAT0)+Math.min(hh,20),mY(LAT1)-Math.min(hh,20))}
+const decoded=['c','b','s'].map(k=>GEO[k].map(a=>{const pts=[];let x=a[0],y=a[1];pts.push([x/10,y/10]);for(let i=2;i<a.length;i+=2){x+=a[i];y+=a[i+1];pts.push([x/10,y/10])}return pts}));
+let G=null;
+function drawField(){
+  const L=LAYERS[layer],sc=3,w=Math.ceil(MW/sc),h=Math.ceil(MH/sc);
+  const off=drawField.off||(drawField.off=document.createElement('canvas'));off.width=w;off.height=h;const ox=off.getContext('2d'),img=ox.createImageData(w,h),D=img.data;
+  const A=G[L.f],span=L.hi-L.lo,isP=layer==='precip';
+  const lons=new Float32Array(w);for(let i=0;i<w;i++)lons[i]=view.clon+((i+.5)*sc-MW/2)/view.k;
+  for(let j=0;j<h;j++){const lat=imY(view.cy-((j+.5)*sc-MH/2)/view.k);const fy=(lat-LAT0)/DG;
+    for(let i=0;i<w;i++){const o=(j*w+i)*4,fx=(lons[i]-LON0)/DG;
+      if(fx<0||fy<0||fx>NX-1||fy>NY-1){D[o]=11;D[o+1]=15;D[o+2]=20;D[o+3]=255;continue}
+      const ii=Math.min(fx|0,NX-2),jj=Math.min(fy|0,NY-2),a=fx-ii,b=fy-jj,q=jj*NX+ii;
+      const v=(A[q]*(1-a)+A[q+1]*a)*(1-b)+(A[q+NX]*(1-a)+A[q+NX+1]*a)*b;
+      const n=clamp(((v-L.lo)/span*255)|0,0,255);let lut=L.lut;
+      if(isP&&G.SN[q]&&v>0.05)lut=SNOWLUT;
+      const bg=(G.BG[q]*(1-a)+G.BG[q+1]*a)*(1-b)+(G.BG[q+NX]*(1-a)+G.BG[q+NX+1]*a)*b,m=1-0.58*bg;
+      D[o]=lut[n*3]*m;D[o+1]=lut[n*3+1]*m;D[o+2]=lut[n*3+2]*m;D[o+3]=255}}
+  ox.putImageData(img,0,0);
+  const{x}=fitCanvas(cF);x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';x.drawImage(off,0,0,w*sc,h*sc);
+}
+function drawLines(){
+  const{x}=fitCanvas(cL);x.clearRect(0,0,MW,MH);x.lineJoin='round';
+  const sets=[[decoded[2],'rgba(255,255,255,.22)',0.7],[decoded[1],'rgba(255,255,255,.45)',0.9],[decoded[0],'rgba(255,255,255,.7)',1.1]];
+  for(const[ls,col,w]of sets){x.strokeStyle=col;x.lineWidth=w;x.beginPath();for(const l of ls){l.forEach((p,i)=>{const[a,b]=proj(p[0],p[1]);i?x.lineTo(a,b):x.moveTo(a,b)})}x.stroke()}
+  // domain frame
+  const[a0,b0]=proj(LON0,LAT1),[a1,b1]=proj(LON1,LAT0);x.strokeStyle='rgba(255,255,255,.25)';x.setLineDash([4,4]);x.strokeRect(a0,b0,a1-a0,b1-b0);x.setLineDash([]);
+  if(showIso){
+    const iv=S.z===0?4:PL[S.z-1]>=700?30:PL[S.z-1]>=400?60:120,A=G.ISO;let lo=Infinity,hi=-Infinity;for(const v of A){if(v<lo)lo=v;if(v>hi)hi=v}
+    const X=(i,j)=>proj(LON0+i*DG,LAT0+j*DG)[0],Y=(i,j)=>proj(LON0+i*DG,LAT0+j*DG)[1],F=(i,j)=>A[j*NX+i];
+    x.strokeStyle='rgba(255,255,255,.78)';x.lineWidth=1.1;const labels=[];
+    for(let lv=Math.ceil(lo/iv)*iv;lv<=hi;lv+=iv){const seg=[];contour(F,NX,NY,lv,X,Y,seg);x.beginPath();for(let q=0;q<seg.length;q+=2){x.moveTo(seg[q][0],seg[q][1]);x.lineTo(seg[q+1][0],seg[q+1][1])}x.stroke();
+      for(let q=0;q<seg.length;q+=46){const[p0,p1]=[seg[q],seg[q+1]],mx=(p0[0]+p1[0])/2,my=(p0[1]+p1[1])/2;if(mx>30&&my>30&&mx<MW-90&&my<MH-30)labels.push([mx,my,S.z===0?String(Math.round(lv)):String(Math.round(lv/10))])}}
+    x.font=`600 11px ${FONT}`;x.textAlign='center';x.textBaseline='middle';const placed=[];
+    for(const[l0,l1,t]of labels){if(placed.some(p=>Math.abs(p[0]-l0)<60&&Math.abs(p[1]-l1)<22))continue;placed.push([l0,l1]);x.lineWidth=3;x.strokeStyle='rgba(10,14,20,.8)';x.strokeText(t,l0,l1);x.fillStyle='#fff';x.fillText(t,l0,l1)}
+  }
+  // stations
+  x.font=`500 11px ${FONT}`;x.textAlign='left';x.textBaseline='middle';
+  for(const s of STN){const[a,b]=proj(s[3],s[2]);if(a<0||b<0||a>MW||b>MH)continue;x.fillStyle='#fff';x.beginPath();x.arc(a,b,2.4,0,7);x.fill();if(view.k>9){x.lineWidth=3;x.strokeStyle='rgba(10,14,20,.7)';x.strokeText(s[0],a+5,b);x.fillText(s[0],a+5,b)}}
+}
+function placePin(){const[a,b]=proj(S.lon,S.lat),pin=document.getElementById('pin'),bu=document.getElementById('bubble');pin.style.left=a+'px';pin.style.top=b+'px';
+  const col=column(S.lon,S.lat,S.t),L=S.z?col.lev[S.z-1]:col.sfc,[dd,ss]=dirSpd(L.u,L.v),st=stnNear(S.lat,S.lon);
+  bu.replaceChildren();const b1=document.createElement('b');b1.textContent=`${L.T.toFixed(1)}°C · ${pad(Math.round(dd/10)*10%360,3)}° ${Math.round(ss*KT)} kt`;
+  const l2=document.createElement('div');l2.textContent=`${levName(S.z)} · RH ${Math.round(L.rh)}%${S.z?` · ${Math.round(L.z)} m`:` · ${col.mslp.toFixed(1)} hPa`}${L.bg?' · below ground':''}`;
+  const l3=document.createElement('div');l3.style.color='#9fb0bc';l3.textContent=(st?st[0]+' · ':'')+fmtLL(S.lat,S.lon);bu.append(b1,l2,l3);
+  bu.style.left=clamp(a,110,MW-110)+'px';bu.style.top=Math.max(b,96)+'px';bu.style.display=a<-20||a>MW+20||b<-20||b>MH+20?'none':'';pin.style.display=bu.style.display}
+function legend(){const L=LAYERS[layer],cv=document.getElementById('lgBar'),x=cv.getContext('2d'),gr=x.createLinearGradient(0,0,300,0);
+  for(let i=0;i<=20;i++){const n=Math.round(i/20*255);gr.addColorStop(i/20,`rgb(${L.lut[n*3]},${L.lut[n*3+1]},${L.lut[n*3+2]})`)}x.fillStyle=gr;x.fillRect(0,0,300,10);
+  document.getElementById('lgName').textContent=L.name+(layer==='precip'?' (surface)':layer==='clouds'&&!S.z?' (total)':'');document.getElementById('lgUnit').textContent=L.unit;
+  const tk=document.getElementById('lgTicks');tk.replaceChildren(...L.ticks.map(v=>{const s=document.createElement('span');s.style.left=clamp((v-L.lo)/(L.hi-L.lo)*100,3,96)+'%';s.textContent=L.tl(v);return s}))}
+const layerBtns=document.getElementById('layers');
+layerBtns.innerHTML=Object.entries(LAYERS).map(([k,L])=>`<button data-l="${k}" aria-pressed="${k===layer}">${L.name}</button>`).join('')+`<hr><button class="tog" data-t="iso" aria-pressed="true">Isolines</button><button class="tog" data-t="part" aria-pressed="${showPart}">Particles</button>`;
+layerBtns.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.l){layer=b.dataset.l;for(const q of layerBtns.querySelectorAll('[data-l]'))q.setAttribute('aria-pressed',q===b);mapDirty.field=1;legend()}
+  else{const on=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',on);if(b.dataset.t==='iso')showIso=on;else{showPart=on;if(!on)fitCanvas(cP).x.clearRect(0,0,MW,MH)}}mapDirty.lines=1;sched()});
+const ladder=document.getElementById('ladder');
+ladder.innerHTML='<p>Level<br>from Skew-T</p>'+[...PL].reverse().map((p,i)=>`<div data-z="${PL.length-i}"${[1000,925,850,700,500,400,300,250,200,150,100].includes(p)?'':' class="minor"'}>${p===1000?'1000h':p+'h'}</div>`).join('')+'<div data-z="0">Surface</div>';
+const gotoSel=document.getElementById('goto');gotoSel.innerHTML+=STN.map((s,i)=>`<option value="${i}">${s[0]} · ${s[1]}</option>`).join('');
+gotoSel.addEventListener('change',()=>{const s=STN[+gotoSel.value];if(s){setState({lat:s[2],lon:s[3]},'map');const[a,b]=proj(s[3],s[2]);if(a<40||b<40||a>MW-40||b>MH-40){view.clon=s[3];view.cy=mY(s[2]);clampView();mapDirty.all=1;sched()}}gotoSel.value=''});
+// pan / zoom / click
+let drag=null;const pts=new Map();
+mapEl.addEventListener('pointerdown',e=>{if(e.target.closest('.ov'))return;mapEl.setPointerCapture(e.pointerId);pts.set(e.pointerId,[e.clientX,e.clientY]);drag={x:e.clientX,y:e.clientY,clon:view.clon,cy:view.cy,moved:false,k:view.k,d0:pts.size===2?dist():0}});
+const dist=()=>{const v=[...pts.values()];return Math.hypot(v[0][0]-v[1][0],v[0][1]-v[1][1])};
+mapEl.addEventListener('pointermove',e=>{if(!drag||!pts.has(e.pointerId))return;pts.set(e.pointerId,[e.clientX,e.clientY]);
+  if(pts.size===2&&drag.d0){view.k=drag.k*dist()/drag.d0;clampView();drag.moved=true;mapDirty.all=1;sched();return}
+  const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(!drag.moved&&Math.hypot(dx,dy)<5)return;drag.moved=true;mapEl.classList.add('drag');
+  view.clon=drag.clon-dx/view.k;view.cy=drag.cy+dy/view.k;clampView();mapDirty.all=1;sched()});
+mapEl.addEventListener('pointerup',e=>{if(!drag)return;pts.delete(e.pointerId);mapEl.classList.remove('drag');
+  if(!drag.moved&&!e.target.closest('.ov')){const r=mapEl.getBoundingClientRect(),[lon,lat]=unproj(e.clientX-r.left,e.clientY-r.top);if(lon>LON0&&lon<LON1&&lat>LAT0&&lat<LAT1){const st=STN.find(s=>{const[a,b]=proj(s[3],s[2]);return Math.hypot(a-(e.clientX-r.left),b-(e.clientY-r.top))<8});setState(st?{lat:st[2],lon:st[3]}:{lat:+lat.toFixed(2),lon:+lon.toFixed(2)},'map')}}
+  if(!pts.size)drag=null});
+mapEl.addEventListener('pointercancel',e=>{pts.delete(e.pointerId);drag=null;mapEl.classList.remove('drag')});
+function zoomAt(f,mx,my){const[lon,lat]=unproj(mx,my);view.k*=f;clampView();const[a,b]=proj(lon,lat);view.clon+=(a-mx)/view.k;view.cy-=(b-my)/view.k;clampView();mapDirty.all=1;sched()}
+mapEl.addEventListener('wheel',e=>{if(e.target.closest('.ov'))return;e.preventDefault();const r=mapEl.getBoundingClientRect();zoomAt(Math.exp(-e.deltaY*0.0015),e.clientX-r.left,e.clientY-r.top)},{passive:false});
+document.getElementById('zin').onclick=()=>zoomAt(1.4,MW/2,MH/2);document.getElementById('zout').onclick=()=>zoomAt(1/1.4,MW/2,MH/2);
+// particles
+let parts=[];
+function resetParts(){const n=Math.round(clamp(MW*MH/190,800,5000));parts=Array.from({length:n},()=>spawn({}));fitCanvas(cP).x.clearRect(0,0,MW,MH)}
+function spawn(p){p.x=Math.random()*MW;p.y=Math.random()*MH;p.age=0;p.max=40+Math.random()*70;return p}
+function stepParts(){if(!showPart||!G||document.hidden)return;const x=cP.getContext('2d');
+  x.globalCompositeOperation='destination-in';x.fillStyle='rgba(0,0,0,.9)';x.fillRect(0,0,MW,MH);x.globalCompositeOperation='source-over';
+  x.strokeStyle='rgba(255,255,255,.72)';x.lineWidth=1;x.beginPath();const SP=0.055;
+  for(const p of parts){const[lon,lat]=unproj(p.x,p.y),u=sampleG(G.U,lon,lat),v=sampleG(G.V,lon,lat);
+    if(u!==u||++p.age>p.max){spawn(p);continue}const nx=p.x+u*SP,ny=p.y-v*SP;x.moveTo(p.x,p.y);x.lineTo(nx,ny);p.x=nx;p.y=ny;if(nx<0||ny<0||nx>MW||ny>MH)spawn(p)}
+  x.stroke()}
+function loop(){stepParts();requestAnimationFrame(loop)}
+function ladderUpd(){ladder.classList.toggle('tall',MH>=640);for(const d of ladder.querySelectorAll('[data-z]'))d.classList.toggle('on',+d.dataset.z===S.z)}
+function whenUpd(){const w=document.getElementById('when');w.innerHTML='';const b=document.createElement('b');b.textContent=`${fmtT(S.t)} · ${fT(S.t)}`;const s=document.createElement('small');s.textContent=`${levName(S.z)} · time from meteogram`;w.append(b,s)}
+const mapDirty={all:1};
+function renderMap(){if(!MW||!MH)return;if(mapDirty.all||mapDirty.grid){G=grid(S.z,S.t)}
+  if(mapDirty.all||mapDirty.grid||mapDirty.field)drawField();
+  if(mapDirty.all||mapDirty.grid||mapDirty.lines)drawLines();
+  if(mapDirty.all)resetParts();
+  placePin();ladderUpd();whenUpd();for(const k in mapDirty)delete mapDirty[k]}
+
+/* ================= SKEW-T ================= */
+const skFig=document.getElementById('skewFig'),cSk=document.getElementById('cSkew'),cSkO=document.getElementById('cSkewO');
+const SK={TL:-40,TR:45,PT:100,PB:1050};let skG=null;
+function skGeom(){const{W,H}=fitCanvas(cSk);fitCanvas(cSkO);const x0=40,x1=W-58,y0=10,y1=H-24;
+  const yP=p=>y0+(Math.log(p)-Math.log(SK.PT))/(Math.log(SK.PB)-Math.log(SK.PT))*(y1-y0);
+  const pY=y=>Math.exp(Math.log(SK.PT)+(y-y0)/(y1-y0)*(Math.log(SK.PB)-Math.log(SK.PT)));
+  const xT=(T,p)=>x0+(T-SK.TL)*(x1-x0)/(SK.TR-SK.TL)+(y1-yP(p))*0.9;
+  skG={W,H,x0,x1,y0,y1,yP,pY,xT};}
+function moistStep(TK,p,dp){const f=(T,P)=>{const ws=wsat(P,T-273.15);return (Rd*T+Lv*ws)/(P*(Cp+Lv*Lv*ws*EPS/(Rd*T*T)))};const k1=f(TK,p),k2=f(TK+k1*dp,p+dp);return TK+(k1+k2)/2*dp}
+function moistLine(TK,p0,p1){const out=[[p0,TK]];let p=p0,T=TK;const dp=p1<p0?-5:5;while((dp<0&&p>p1)||(dp>0&&p<p1)){T=moistStep(T,p,dp);p+=dp;out.push([p,T])}return out}
+function drawSkewBase(){
+  if(!skG)skGeom();const{x}=fitCanvas(cSk),{W,H,x0,x1,y0,y1,yP,xT}=skG;x.clearRect(0,0,W,H);x.save();x.beginPath();x.rect(x0,y0,x1-x0,y1-y0);x.clip();
+  const poly=(pts,col,w,dash)=>{x.strokeStyle=col;x.lineWidth=w;x.setLineDash(dash||[]);x.beginPath();pts.forEach(([p,T],i)=>{const a=xT(T,p),b=yP(p);i?x.lineTo(a,b):x.moveTo(a,b)});x.stroke();x.setLineDash([])};
+  // isotherms
+  for(let T=-130;T<=50;T+=10)poly([[1050,T],[100,T]],T===0?'#3b6fd0':'#c9bfa8',T===0?1.4:0.8);
+  // dry adiabats
+  for(let th=240;th<=470;th+=10){const pts=[];for(let p=1050;p>=100;p-=25)pts.push([p,th*Math.pow(p/1000,0.2857)-273.15]);poly(pts,'#d9a46b',0.7)}
+  // moist adiabats
+  for(let tw=-16;tw<=36;tw+=4)poly(moistLine(tw+273.15,1000,200).map(([p,T])=>[p,T-273.15]),'#6fae8f',0.7,[5,3]);
+  // mixing ratio
+  const MR=[0.4,1,2,4,7,10,16,24];for(const w of MR){const pts=[];for(let p=1050;p>=600;p-=25){const e=w/1000*p/(EPS+w/1000);pts.push([p,tdFromE(e)])}poly(pts,'#a07cc0',0.8,[2,3])}
+  // isobars
+  x.strokeStyle='#bdb7a8';x.lineWidth=0.8;for(let p=1000;p>=100;p-=100){x.beginPath();x.moveTo(x0,yP(p));x.lineTo(x1,yP(p));x.stroke()}
+  x.restore();
+  x.strokeStyle='#5d5a50';x.lineWidth=1;x.strokeRect(x0,y0,x1-x0,y1-y0);
+  x.fillStyle='#3a3833';x.font=`500 11px ${FONT}`;x.textAlign='right';x.textBaseline='middle';
+  for(let p=1000;p>=100;p-=100)x.fillText(p,x0-5,yP(p));
+  x.textAlign='center';x.textBaseline='top';for(let T=-40;T<=40;T+=10){const a=xT(T,SK.PB);if(a>x0+6&&a<x1-6)x.fillText(T+'°',a,y1+5)}
+  x.fillStyle='#8a6aa8';x.font=`500 10px ${FONT}`;x.textBaseline='bottom';for(const w of MR){const e=w/1000*650/(EPS+w/1000),a=xT(tdFromE(e),650);if(a>x0+8&&a<x1-8)x.fillText(w,a,yP(650)-2)}
+  x.fillStyle='#3a3833';x.font=`600 11px ${FONT}`;x.save();x.translate(x1+30,y0+2);x.textAlign='center';x.textBaseline='top';x.fillText('kt',0,0);x.restore();
+}
+function parcel(col){ // surface-based parcel; returns trace + indices
+  const s=col.sfc,TK=s.T+273.15,TdK=s.Td+273.15,tl=1/(1/(TdK-56)+Math.log(TK/TdK)/800)+56,pl=s.p*Math.pow(tl/TK,3.5);
+  const env=envProfile(col),tr=[];
+  for(let p=s.p;p>pl;p-=5)tr.push([p,TK*Math.pow(p/s.p,0.2857)]);
+  for(const q of moistLine(tl,pl,100))tr.push(q);
+  let cape=0,cin=0,lfc=null,el=null,above=false;
+  for(let i=1;i<tr.length;i++){const[p0,t0]=tr[i-1],[p1,t1]=tr[i],e0=env(p0)+273.15,e1=env(p1)+273.15,d=((t0-e0)+(t1-e1))/2,dl=Math.log(p0/p1);
+    if(d>0&&p1<=pl+5){if(!above){above=true;if(!lfc)lfc=p1}cape+=Rd*d*dl;el=p1}else{if(above){above=false}if(!lfc)cin+=Rd*Math.min(0,d)*dl}}
+  if(cape<1){cape=0;lfc=null;el=null}
+  return{tr,pl,tl,cape,cin:cape?cin:null,lfc,el,env}
+}
+function envProfile(col){const L=[{p:col.sfc.p,T:col.sfc.T,Td:col.sfc.Td,z:col.h,u:col.sfc.u,v:col.sfc.v},...col.lev.filter(l=>!l.bg)];
+  const f=(p,k)=>{if(p>=L[0].p)return L[0][k];for(let i=1;i<L.length;i++)if(p>=L[i].p){const a=L[i-1],b=L[i],q=Math.log(a.p/p)/Math.log(a.p/b.p);return a[k]+(b[k]-a[k])*q}return L[L.length-1][k]};
+  const g=p=>f(p,'T');g.L=L;g.f=f;return g}
+function indices(col,pc){
+  const L=pc.env.L,at=p=>pc.env.f(p,'T'),dt=p=>pc.env.f(p,'Td'),zp=p=>pc.env.f(p,'z');
+  const t500p=(()=>{let best=pc.tr[0];for(const q of pc.tr)if(Math.abs(q[0]-500)<Math.abs(best[0]-500))best=q;return best[1]-273.15})();
+  let pw=0;for(let i=1;i<L.length;i++){const a=L[i-1],b=L[i],w=(wsat(a.p,a.Td)+wsat(b.p,b.Td))/2;pw+=w*(a.p-b.p)*100/g}
+  let fzl=null;for(let i=1;i<L.length;i++){if(L[i-1].T>0&&L[i].T<=0){const q=L[i-1].T/(L[i-1].T-L[i].T);fzl=L[i-1].z+(L[i].z-L[i-1].z)*q;break}}if(fzl===null&&L[0].T<=0)fzl=col.h;
+  const zz=col.h+6000;let u6=0,v6=0;for(let i=1;i<L.length;i++)if(L[i].z>=zz){const a=L[i-1],b=L[i],q=(zz-a.z)/(b.z-a.z);u6=a.u+(b.u-a.u)*q;v6=a.v+(b.v-a.v)*q;break}
+  const shr=Math.hypot(u6-col.sfc.u,v6-col.sfc.v)*KT;
+  const ok=p=>p<col.sfc.p;
+  const K=ok(850)?(at(850)-at(500))+dt(850)-(at(700)-dt(700)):null,TT=ok(850)?at(850)+dt(850)-2*at(500):null;
+  const lclz=pc.env.f(pc.pl,'z')-col.h;
+  return[['SBCAPE',Math.round(pc.cape)+' J/kg'],['SBCIN',pc.cin===null?'—':Math.round(pc.cin)+' J/kg'],['Lifted index',(at(500)-t500p).toFixed(1)],['LCL',`${Math.round(pc.pl)} hPa · ${Math.round(lclz*3.281/100)*100} ft`],['LFC',pc.lfc?Math.round(pc.lfc)+' hPa':'—'],['EL',pc.el?Math.round(pc.el)+' hPa':'—'],['K index',K===null?'—':K.toFixed(0)],['Total totals',TT===null?'—':TT.toFixed(0)],['Precip. water',`${pw.toFixed(1)} mm · ${(pw/25.4).toFixed(2)} in`],['Freezing level',fzl===null?'—':`${Math.round(fzl*3.281/100)*100} ft MSL`],['0–6 km shear',Math.round(shr)+' kt'],['Sfc T / Td',`${col.sfc.T.toFixed(1)} / ${col.sfc.Td.toFixed(1)} °C`]]
+}
+let skHoverY=null;
+function drawSkew(){
+  if(!skG)skGeom();const{x}=fitCanvas(cSkO),{W,H,x0,x1,y0,y1,yP,xT,pY}=skG;x.clearRect(0,0,W,H);
+  const col=column(S.lon,S.lat,S.t),pc=parcel(col),env=pc.env,L=env.L;
+  x.save();x.beginPath();x.rect(x0,y0,x1-x0,y1-y0);x.clip();
+  // CAPE / CIN shading
+  for(let i=1;i<pc.tr.length;i++){const[p0,t0]=pc.tr[i-1],[p1,t1]=pc.tr[i],e0=env(p0),e1=env(p1),d0=t0-273.15-e0,d1=t1-273.15-e1;
+    if(d0*d1<0)continue;const pos=d0>0;if(!pos&&(!pc.lfc||p1<pc.lfc))continue;if(!pos&&pc.cape===0)continue;
+    x.fillStyle=pos?'rgba(230,60,60,.22)':'rgba(60,110,230,.18)';x.beginPath();x.moveTo(xT(e0,p0),yP(p0));x.lineTo(xT(t0-273.15,p0),yP(p0));x.lineTo(xT(t1-273.15,p1),yP(p1));x.lineTo(xT(e1,p1),yP(p1));x.fill()}
+  const line=(k,col,w,dash)=>{x.strokeStyle=col;x.lineWidth=w;x.setLineDash(dash||[]);x.beginPath();L.forEach((l,i)=>{const a=xT(l[k],l.p),b=yP(l.p);i?x.lineTo(a,b):x.moveTo(a,b)});x.stroke();x.setLineDash([])};
+  x.strokeStyle='#e08a00';x.lineWidth=1.4;x.setLineDash([6,4]);x.beginPath();pc.tr.forEach(([p,T],i)=>{const a=xT(T-273.15,p),b=yP(p);i?x.lineTo(a,b):x.moveTo(a,b)});x.stroke();x.setLineDash([]);
+  line('Td','#14873a',2.4);line('T','#d01c1c',2.4);
+  // ground
+  const yg=yP(col.sfc.p);x.fillStyle='rgba(120,96,64,.28)';x.fillRect(x0,yg,x1-x0,y1-yg);x.strokeStyle='#7a6040';x.lineWidth=1.5;x.beginPath();x.moveTo(x0,yg);x.lineTo(x1,yg);x.stroke();
+  // selected level
+  const sp=S.z?PL[S.z-1]:col.sfc.p,ys=yP(sp),Ls=S.z?col.lev[S.z-1]:col.sfc;
+  x.strokeStyle='#ff2e7e';x.lineWidth=2;x.beginPath();x.moveTo(x0,ys);x.lineTo(x1,ys);x.stroke();
+  if(!Ls.bg){for(const[k,c]of[['T','#d01c1c'],['Td','#14873a']]){x.fillStyle='#fff';x.strokeStyle=c;x.lineWidth=2;x.beginPath();x.arc(xT(Ls[k],sp),ys,4.5,0,7);x.fill();x.stroke()}}
+  // hover
+  if(skHoverY!==null&&skHoverY>y0&&skHoverY<y1){x.strokeStyle='rgba(60,60,60,.5)';x.lineWidth=1;x.setLineDash([3,3]);x.beginPath();x.moveTo(x0,skHoverY);x.lineTo(x1,skHoverY);x.stroke();x.setLineDash([])}
+  x.restore();
+  // level tag
+  x.font=`600 12px ${FONT}`;const tag=`${levName(S.z)}${S.z&&!Ls.bg?` · ${Ls.T.toFixed(1)}° / ${Ls.Td.toFixed(1)}°`:''}${Ls.bg?' · below ground':''}`,tw=x.measureText(tag).width+12;
+  const tx=x0+6,ty=clamp(ys-22,y0+2,y1-20);x.fillStyle='#ff2e7e';x.beginPath();x.roundRect(tx,ty,tw,18,4);x.fill();x.fillStyle='#fff';x.textAlign='left';x.textBaseline='middle';x.fillText(tag,tx+6,ty+9);
+  // markers on right edge: LCL / LFC / EL / FZL
+  x.font=`600 10px ${FONT}`;x.textAlign='right';
+  const mk=(p,t,c)=>{if(!p||p<SK.PT)return;const b=yP(p);x.strokeStyle=c;x.lineWidth=1.5;x.beginPath();x.moveTo(x1-26,b);x.lineTo(x1,b);x.stroke();x.fillStyle=c;x.fillText(t,x1-28,b)};
+  mk(pc.pl,'LCL','#6b5a2a');mk(pc.lfc,'LFC','#b03030');mk(pc.el,'EL','#b03030');
+  // barbs
+  for(const l of col.lev){if(l.bg||l.p<100)continue;barb(x,x1+30,yP(l.p),l.u,l.v,22,'#1d2a33')}
+  barb(x,x1+30,yg,col.sfc.u,col.sfc.v,22,'#1d2a33');
+  // hodograph
+  const hs=Math.min(150,(x1-x0)*0.36),hx=x1-hs/2-8,hy=y0+hs/2+8,R=hs/2-6,sc=R/80;
+  x.fillStyle='rgba(255,255,255,.92)';x.strokeStyle='#8c877a';x.lineWidth=1;x.beginPath();x.rect(hx-hs/2,hy-hs/2,hs,hs);x.fill();x.stroke();
+  x.strokeStyle='#d6d1c4';for(const r of[20,40,60,80]){x.beginPath();x.arc(hx,hy,r*sc,0,7);x.stroke()}
+  x.beginPath();x.moveTo(hx-R,hy);x.lineTo(hx+R,hy);x.moveTo(hx,hy-R);x.lineTo(hx,hy+R);x.stroke();
+  const HC=[[3000,'#d01c1c'],[6000,'#14873a'],[9000,'#c9a400'],[1e9,'#3b6fd0']];x.lineWidth=2;
+  for(let i=1;i<L.length;i++){const a=L[i-1],b=L[i],agl=(a.z+b.z)/2-col.h;x.strokeStyle=HC.find(h=>agl<h[0])[1];x.beginPath();
+    x.moveTo(hx+clamp(a.u*KT,-80,80)*sc,hy-clamp(a.v*KT,-80,80)*sc);x.lineTo(hx+clamp(b.u*KT,-80,80)*sc,hy-clamp(b.v*KT,-80,80)*sc);x.stroke()}
+  x.fillStyle='#5a564c';x.font=`500 10px ${FONT}`;x.textAlign='left';x.textBaseline='top';x.fillText('Hodograph · rings 20 kt',hx-hs/2+4,hy-hs/2+3);
+  // header + indices
+  const st=stnNear(S.lat,S.lon);document.getElementById('skSub').textContent=`${st?st[0]+' · ':''}${fmtLL(S.lat,S.lon)} · elev ${Math.round(col.h)} m · VT ${fmtT(S.t)} (${fT(S.t)})`;
+  const idx=document.getElementById('idx');idx.replaceChildren(...indices(col,pc).map(([k,v])=>{const d=document.createElement('div'),s=document.createElement('small'),b=document.createElement('span');s.textContent=k;b.textContent=v;d.append(s,b);return d}));
+}
+function skPick(y){const{y0,y1,pY}=skG;const p=pY(clamp(y,y0,y1)),col=column(S.lon,S.lat,S.t);
+  if(p>col.sfc.p-12)return 0;let best=1,bd=1e9;PL.forEach((q,i)=>{if(q>col.sfc.p)return;const d=Math.abs(Math.log(q/p));if(d<bd){bd=d;best=i+1}});return best}
+let skDown=false;
+skFig.addEventListener('pointerdown',e=>{skDown=true;skFig.setPointerCapture(e.pointerId);const r=skFig.getBoundingClientRect();setState({z:skPick(e.clientY-r.top)},'skewt')});
+skFig.addEventListener('pointermove',e=>{const r=skFig.getBoundingClientRect();skHoverY=e.clientY-r.top;if(skDown)setState({z:skPick(skHoverY)},'skewt');sk.over=1;sched()});
+skFig.addEventListener('pointerup',()=>skDown=false);skFig.addEventListener('pointerleave',()=>{skHoverY=null;sk.over=1;sched()});
+skFig.addEventListener('keydown',e=>{if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();setState({z:S.z+(e.key==='ArrowUp'?1:-1)},'skewt')}});
+const sk={base:1,over:1};
+
+/* ================= METEOGRAM ================= */
+const mtFig=document.getElementById('metFig'),cMt=document.getElementById('cMet'),cMtO=document.getElementById('cMetO');
+let MG=null,SER=null,mtHover=null;
+function mtGeom(){const{W,H}=fitCanvas(cMt);fitCanvas(cMtO);const x0=46,x1=W-46,top=20,bot=H-30,gap=10;
+  const fr=[['th',0.40],['tt',0.16],['wd',0.15],['sl',0.12],['pc',0.17]],avail=bot-top-gap*(fr.length-1);let y=top;const P={};
+  for(const[k,f]of fr){P[k]={y0:y,y1:y+avail*f};y+=avail*f+gap}
+  const xt=t=>x0+t/(NT-1)*(x1-x0),tx=x=>clamp((x-x0)/(x1-x0)*(NT-1),0,NT-1);
+  const th=P.th,sfcBand=14,ypl=p=>th.y0+(Math.log(p)-Math.log(100))/(Math.log(1000)-Math.log(100))*(th.y1-sfcBand-th.y0),ply=y=>Math.exp(Math.log(100)+(y-th.y0)/(th.y1-sfcBand-th.y0)*(Math.log(1000)-Math.log(100)));
+  MG={W,H,x0,x1,top,bot,P,xt,tx,ypl,ply,sfcBand}}
+function drawMetBase(){
+  if(!MG)mtGeom();const{x}=fitCanvas(cMt),{W,H,x0,x1,P,xt,ypl,sfcBand}=MG;x.clearRect(0,0,W,H);SER=series();
+  const nights=[];for(let t=0;t<NT;t++){const sh=SER[t].sh;if(sh<6.5||sh>=17.5)nights.push(t)}
+  const panel=(k,label,unitL)=>{const p=P[k];x.fillStyle='#fff';x.fillRect(x0,p.y0,x1-x0,p.y1-p.y0);x.fillStyle='rgba(40,60,90,.07)';for(const t of nights)x.fillRect(xt(t-0.5),p.y0,xt(t+0.5)-xt(t-0.5),p.y1-p.y0);
+    x.strokeStyle='#ebe7dc';x.lineWidth=1;for(let t=0;t<NT;t+=6){x.beginPath();x.moveTo(xt(t),p.y0);x.lineTo(xt(t),p.y1);x.stroke()}
+    x.strokeStyle='#cfcabc';for(let t=0;t<NT;t+=24){const tt=t+12;if(tt<NT){x.beginPath();x.moveTo(xt(tt),p.y0);x.lineTo(xt(tt),p.y1);x.stroke()}}
+    x.fillStyle='#2a2925';x.font=`600 11px ${FONT}`;x.textAlign='left';x.textBaseline='top';const tw=x.measureText(label).width;x.fillStyle='rgba(251,250,246,.85)';x.fillRect(x0+3,p.y0+2,tw+6,14);x.fillStyle='#2a2925';x.fillText(label,x0+6,p.y0+3)};
+  const frame=k=>{const p=P[k];x.strokeStyle='#6d695e';x.lineWidth=1;x.strokeRect(x0,p.y0,x1-x0,p.y1-p.y0)};
+  const yax=(k,lo,hi,step,fmtL,fmtR,colL,colR)=>{const p=P[k],Y=v=>p.y1-(v-lo)/(hi-lo)*(p.y1-p.y0);x.font=`500 10px ${FONT}`;x.textBaseline='middle';
+    for(let v=Math.ceil(lo/step)*step;v<=hi+1e-9;v+=step){const y=Y(v);if(y<p.y0+4||y>p.y1-4)continue;x.strokeStyle='#efece4';x.beginPath();x.moveTo(x0,y);x.lineTo(x1,y);x.stroke();x.textAlign='right';x.fillStyle=colL||'#4a473f';x.fillText(fmtL(v),x0-4,y);if(fmtR){x.textAlign='left';x.fillStyle=colR||'#4a473f';x.fillText(fmtR(v),x1+4,y)}}return Y};
+  /* time-height */
+  const th=P.th;panel('th','');
+  for(let t=0;t<NT;t++){const c=SER[t];for(let j=0;j<PL.length;j++){const L=c.lev[j],pa=j?Math.sqrt(PL[j]*PL[j-1]):1000,pb=j<PL.length-1?Math.sqrt(PL[j]*PL[j+1]):100;
+    const rh=L.rh;let col=null;if(rh>=97)col='#3c8a3a';else if(rh>=90)col='#5fae55';else if(rh>=80)col='#9fd18c';else if(rh>=70)col='#d3ecc8';
+    if(col){x.fillStyle=col;x.fillRect(xt(t-0.5),ypl(pa),xt(t+0.5)-xt(t-0.5)+0.5,ypl(pb)-ypl(pa)-0.5)}}}
+  // isotherms
+  const F=(i,j)=>SER[i].lev[j].T,Xf=(i,j)=>xt(i),Yf=(i,j)=>{const j0=Math.floor(j),f=j-j0;return j0>=PL.length-1?ypl(PL[PL.length-1]):ypl(Math.exp(Math.log(PL[j0])*(1-f)+Math.log(PL[j0+1])*f))};
+  x.save();x.beginPath();x.rect(x0,th.y0,x1-x0,th.y1-sfcBand-th.y0);x.clip();
+  const tlabels=[];
+  for(let lv=-70;lv<=35;lv+=5){const lab=lv%10===0;const seg=[];contour(F,NT,PL.length,lv,Xf,Yf,seg);if(!seg.length)continue;
+    x.strokeStyle=lv===0?'#1f4fbf':lv<0?'rgba(31,79,191,.55)':'rgba(200,30,30,.6)';x.lineWidth=lv===0?2:1;x.setLineDash(lv===0?[]:[4,3]);
+    x.beginPath();for(let q=0;q<seg.length;q+=2){x.moveTo(seg[q][0],seg[q][1]);x.lineTo(seg[q+1][0],seg[q+1][1])}x.stroke();x.setLineDash([]);
+    for(let q=0;q<seg.length;q+=2){const m=seg[q];if(lab&&(Math.abs(m[0]-xt(15))<6||Math.abs(m[0]-xt(75))<6)){tlabels.push([m[0],m[1],lv]);break}}}
+  x.font=`600 10px ${FONT}`;x.textAlign='center';x.textBaseline='middle';for(const[a,b,lv]of tlabels){x.fillStyle='rgba(255,255,255,.9)';x.fillRect(a-9,b-6,18,12);x.fillStyle=lv<=0?'#1f4fbf':'#b01e1e';x.fillText(lv,a,b)}
+  // barbs
+  const bs=W<620?12:6;for(let t=3;t<NT;t+=bs){const c=SER[t];for(const p of(W<620?[850,700,500,300,200]:[925,850,700,600,500,400,300,250,200,150])){const L=c.lev[PL.indexOf(p)];if(L.bg)continue;barb(x,xt(t),ypl(p),L.u,L.v,15,'#26313a')}}
+  // ground
+  x.fillStyle='#a8916f';x.beginPath();x.moveTo(xt(0),th.y1);for(let t=0;t<NT;t++)x.lineTo(xt(t),ypl(Math.min(SER[t].ps,1000)));x.lineTo(xt(NT-1),th.y1);x.fill();
+  x.restore();
+  // sfc band
+  x.fillStyle='#f1ede3';x.fillRect(x0,th.y1-sfcBand,x1-x0,sfcBand);x.fillStyle='#4a473f';x.font=`600 10px ${FONT}`;x.textAlign='right';x.textBaseline='middle';x.fillText('SFC',x0-4,th.y1-sfcBand/2);
+  x.font=`500 10px ${FONT}`;for(const p of[850,700,500,300,200,100]){x.fillText(p,x0-4,ypl(p))}
+  frame('th');
+  x.fillStyle='#2a2925';x.font=`600 11px ${FONT}`;x.textAlign='left';x.textBaseline='top';x.fillStyle='rgba(251,250,246,.9)';x.fillRect(x0+3,th.y0+2,236,14);x.fillStyle='#2a2925';x.fillText('Time–height: RH ≥70/80/90/97 %, isotherms 5 °C, wind kt',x0+6,th.y0+3);
+  /* T / Td */
+  let lo=Infinity,hi=-Infinity;for(const c of SER){lo=Math.min(lo,c.sfc.Td);hi=Math.max(hi,c.sfc.T)}lo=Math.floor((lo-2)/5)*5;hi=Math.ceil((hi+2)/5)*5;
+  panel('tt','2 m temperature / dewpoint  °C | °F');const Yt=yax('tt',lo,hi,(hi-lo)>30?10:5,v=>v,v=>Math.round(v*9/5+32),'#4a473f','#4a473f');
+  x.strokeStyle='rgba(31,79,191,.6)';x.setLineDash([2,2]);if(0>lo&&0<hi){x.beginPath();x.moveTo(x0,Yt(0));x.lineTo(x1,Yt(0));x.stroke()}x.setLineDash([]);
+  const pl=(Y,f,col,w,dash)=>{x.strokeStyle=col;x.lineWidth=w;x.setLineDash(dash||[]);x.beginPath();SER.forEach((c,t)=>{const v=f(c);t?x.lineTo(xt(t),Y(v)):x.moveTo(xt(t),Y(v))});x.stroke();x.setLineDash([])};
+  pl(Yt,c=>c.sfc.Td,'#14873a',2);pl(Yt,c=>c.sfc.T,'#d01c1c',2);frame('tt');
+  /* wind */
+  let wm=10;for(const c of SER)wm=Math.max(wm,c.sfc.gust*KT);wm=Math.ceil((wm+12)/10)*10;
+  panel('wd','10 m wind / gust  kt');const Yw=yax('wd',0,wm,wm>40?20:10,v=>v);
+  pl(Yw,c=>c.sfc.gust*KT,'#7a5cc2',1.3,[4,3]);pl(Yw,c=>Math.hypot(c.sfc.u,c.sfc.v)*KT,'#3b2a7a',2);
+  const wp=P.wd;for(let t=3;t<NT;t+=(W<620?12:6)){const c=SER[t];barb(x,xt(t),wp.y0+(wp.y1-wp.y0)*0.32,c.sfc.u,c.sfc.v,13,'#1d2a33')}frame('wd');
+  /* mslp */
+  let sl=Infinity,sh=-Infinity;for(const c of SER){sl=Math.min(sl,c.mslp);sh=Math.max(sh,c.mslp)}sl=Math.floor(sl/4)*4-2;sh=Math.ceil(sh/4)*4+2;
+  panel('sl','Mean sea-level pressure  hPa');const Ys=yax('sl',sl,sh,(sh-sl)>24?8:4,v=>v);pl(Ys,c=>c.mslp,'#1d2a33',2);frame('sl');
+  /* precip + cloud */
+  let pm=1;for(const c of SER)pm=Math.max(pm,c.sfc.pr);pm=Math.ceil(pm);
+  panel('pc','Precip mm/h (blue rain, violet snow) · total cloud % (grey)');const pp=P.pc,Yc=v=>pp.y1-v*(pp.y1-pp.y0-16);
+  x.fillStyle='rgba(120,128,140,.22)';x.beginPath();x.moveTo(xt(0),pp.y1);SER.forEach((c,t)=>x.lineTo(xt(t),Yc(c.sfc.tcc)));x.lineTo(xt(NT-1),pp.y1);x.fill();
+  const Yp=yax('pc',0,pm,pm>4?2:pm>2?1:0.5,v=>v);
+  let tot=0;for(let t=0;t<NT;t++){const s=SER[t].sfc;if(!s.pr)continue;tot+=s.pr;x.fillStyle=s.snow?'#a64ca6':'#2f7fc1';const bw=Math.max(1,xt(1)-xt(0)-0.5);x.fillRect(xt(t)-bw/2,Yp(s.pr),bw,pp.y1-Yp(s.pr))}frame('pc');
+  /* x axis */
+  x.fillStyle='#2a2925';x.font=`500 10px ${FONT}`;x.textAlign='center';x.textBaseline='top';
+  const hs=W<620?12:6;for(let t=0;t<NT;t+=6){const d=vt(t);if(t%hs===0||d.getUTCHours()===0)x.fillText(pad(d.getUTCHours())+'Z',xt(t),MG.bot+3);if(d.getUTCHours()===0){x.font=`600 10px ${FONT}`;x.fillText(`${DOW[d.getUTCDay()]} ${d.getUTCDate()}`,xt(t),MG.bot+15);x.font=`500 10px ${FONT}`}}
+  x.textBaseline='bottom';for(let t=0;t<NT;t+=W<620?24:12)x.fillText(fT(t),xt(t),P.th.y0-3);
+  const st=stnNear(S.lat,S.lon);document.getElementById('mtSub').textContent=`${st?st[0]+' · ':''}${fmtLL(S.lat,S.lon)} · elev ${Math.round(SER[0].h)} m · 120 h precip ${tot.toFixed(1)} mm`;
+}
+function drawMet(){
+  if(!MG)mtGeom();const{x}=fitCanvas(cMtO),{W,H,x0,x1,P,xt,ypl,sfcBand,top,bot}=MG;x.clearRect(0,0,W,H);
+  if(mtHover!==null){x.strokeStyle='rgba(40,40,40,.35)';x.lineWidth=1;x.setLineDash([3,3]);x.beginPath();x.moveTo(xt(mtHover),P.th.y0);x.lineTo(xt(mtHover),bot);x.stroke();x.setLineDash([])}
+  const a=xt(S.t);x.strokeStyle='#ff2e7e';x.lineWidth=2;x.beginPath();x.moveTo(a,P.th.y0);x.lineTo(a,bot);x.stroke();
+  const zy=S.z?ypl(PL[S.z-1]):P.th.y1-sfcBand/2;x.beginPath();x.moveTo(x0,zy);x.lineTo(x1,zy);x.stroke();
+  x.fillStyle='#fff';x.strokeStyle='#ff2e7e';x.lineWidth=2.5;x.beginPath();x.arc(a,zy,5,0,7);x.fill();x.stroke();
+  const tag=`${fT(S.t)} · ${fmtT(S.t)}`;x.font=`600 11px ${FONT}`;const tw=x.measureText(tag).width+12,tx=clamp(a-tw/2,2,W-tw-2);x.fillStyle='#ff2e7e';x.beginPath();x.roundRect(tx,1,tw,17,4);x.fill();x.fillStyle='#fff';x.textAlign='center';x.textBaseline='middle';x.fillText(tag,tx+tw/2,10);
+  const zt=levName(S.z);const zw=x.measureText(zt).width+10;x.fillStyle='#ff2e7e';x.beginPath();x.roundRect(x1+2,clamp(zy-8,P.th.y0,P.th.y1-16),Math.min(zw,W-x1-3),16,3);x.fill();x.fillStyle='#fff';x.font=`600 10px ${FONT}`;x.textAlign='left';x.fillText(S.z?PL[S.z-1]:'SFC',x1+6,clamp(zy,P.th.y0+8,P.th.y1-8));
+  if(SER){const c=SER[S.t],s=c.sfc,[dd]=dirSpd(s.u,s.v);x.font=`600 11px ${FONT}`;x.textAlign=a>W*0.6?'right':'left';x.textBaseline='top';const ox=a>W*0.6?a-6:a+6;
+    const lines=[[`${s.T.toFixed(1)}/${s.Td.toFixed(1)}°C`,P.tt.y0+16],[`${pad(Math.round(dd/10)*10%360,3)}° ${Math.round(Math.hypot(s.u,s.v)*KT)}G${Math.round(s.gust*KT)} kt`,P.wd.y0+16],[`${c.mslp.toFixed(1)} hPa`,P.sl.y0+16],[`${s.pr.toFixed(1)} mm/h · ${Math.round(s.tcc*100)}% cloud`,P.pc.y0+16]];
+    for(const[t,y]of lines){const w=x.measureText(t).width;x.fillStyle='rgba(255,255,255,.88)';x.fillRect(a>W*0.6?ox-w-3:ox-3,y-1,w+6,14);x.fillStyle='#b0164f';x.fillText(t,ox,y)}}
+}
+function mtPick(cx,cy,setZ){const{tx,P,ply,sfcBand}=MG;const patch={t:tx(cx)};if(setZ&&cy>=P.th.y0&&cy<=P.th.y1){if(cy>P.th.y1-sfcBand)patch.z=0;else{const p=ply(cy);let b=1,bd=1e9;PL.forEach((q,i)=>{const d=Math.abs(Math.log(q/p));if(d<bd){bd=d;b=i+1}});patch.z=b}}return patch}
+let mtDown=false;
+mtFig.addEventListener('pointerdown',e=>{mtDown=true;mtFig.setPointerCapture(e.pointerId);const r=mtFig.getBoundingClientRect(),cy=e.clientY-r.top;mtDown={th:cy>=MG.P.th.y0&&cy<=MG.P.th.y1};setState(mtPick(e.clientX-r.left,cy,true),'meteogram')});
+mtFig.addEventListener('pointermove',e=>{const r=mtFig.getBoundingClientRect();mtHover=Math.round(MG.tx(e.clientX-r.left));if(mtDown)setState(mtPick(e.clientX-r.left,e.clientY-r.top,mtDown.th),'meteogram');mt.over=1;sched()});
+mtFig.addEventListener('pointerup',()=>mtDown=false);mtFig.addEventListener('pointerleave',()=>{mtHover=null;mt.over=1;sched()});
+mtFig.addEventListener('keydown',e=>{const k=e.key;if(k==='ArrowLeft'||k==='ArrowRight'){e.preventDefault();setState({t:S.t+(k==='ArrowRight'?(e.shiftKey?6:1):(e.shiftKey?-6:-1))},'meteogram')}else if(k==='ArrowUp'||k==='ArrowDown'){e.preventDefault();setState({z:S.z+(k==='ArrowUp'?1:-1)},'meteogram')}else if(k===' '){e.preventDefault();togglePlay()}});
+const mt={base:1,over:1};
+let playT=null;const playBtn=document.getElementById('play');
+function togglePlay(){if(playT){clearInterval(playT);playT=null}else playT=setInterval(()=>setState({t:(S.t+1)%NT},'meteogram'),260);playBtn.setAttribute('aria-pressed',!!playT);playBtn.textContent=playT?'Pause':'Play'}
+playBtn.onclick=togglePlay;
+
+/* ================= wiring ================= */
+function chips(ch){const stn=stnNear(S.lat,S.lon);document.getElementById('vXY').textContent=(stn?stn[0]+' · ':'')+fmtLL(S.lat,S.lon);
+  const col=column(S.lon,S.lat,S.t);document.getElementById('vZ').textContent=S.z?`${PL[S.z-1]} hPa · ${Math.round(col.lev[S.z-1].z)} m`:`Surface · ${Math.round(col.h)} m`;
+  document.getElementById('vT').textContent=`${fmtT(S.t)} · ${fT(S.t)}`;
+  if(ch)for(const[k,id]of[['lat','chipXY'],['z','chipZ'],['t','chipT']])if(ch[k]){const el=document.getElementById(id);el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash')}}
+subscribe((ch,src)=>{
+  if(ch.z||ch.t){mapDirty.grid=1;if(ch.z)legend()}
+  if(ch.lat||ch.lon){mt.base=1}
+  sk.over=1;mt.over=1;chips(ch.lon&&!ch.lat?{...ch,lat:1}:ch);sched()});
+let rq=0;function sched(){if(!rq)rq=requestAnimationFrame(()=>{rq=0;renderMap();if(mt.base){drawMetBase();mt.base=0}if(mt.over){drawMet();mt.over=0}if(sk.base){drawSkewBase();sk.base=0}if(sk.over){drawSkew();sk.over=0}})}
+const ro=new ResizeObserver(()=>{fitView.done||(fitView(),fitView.done=1);const r=mapEl.getBoundingClientRect();MW=r.width;MH=r.height;clampView();mapDirty.all=1;skGeom();mtGeom();sk.base=sk.over=mt.base=mt.over=1;sched()});
+ro.observe(mapEl);ro.observe(skFig);ro.observe(mtFig);
+legend();chips();
+(document.fonts?document.fonts.ready:Promise.resolve()).then(()=>{sk.base=sk.over=mt.base=mt.over=1;mapDirty.lines=1;sched()});
+requestAnimationFrame(loop);
+window.__wx={S,setState,column,grid,parcel};
+}
+</script>
+</body>
+</html>
