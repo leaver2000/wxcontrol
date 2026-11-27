@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  server-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install nzthermo (Cython 3.0.x, no build isolation)
+        run: |
+          pip install "Cython==3.0.11" "numpy>=2" setuptools setuptools_scm wheel
+          pip install --no-build-isolation "git+https://github.com/leaver2000/nzthermo@3435f97683ec826ea1ee625cfc95c98ac38a8381"
+      - name: Install wxserver
+        run: pip install -e ".[test]" boto3
+      - name: Test (fake NOAA bucket -> ingest -> Icechunk -> API; Icechunk over S3 via moto)
+        run: pytest -q
+
+  compose-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config --quiet
+      - run: docker compose build
+      - name: Smoke test the stack (db, bucket init, API, client)
+        run: |
+          echo "WX_MODELS=hrrr" > .env
+          echo "WX_POLL_SECONDS=3600" >> .env
+          docker compose up -d db db-init server client
+          for i in $(seq 1 60); do curl -fs localhost:8080/api/health && break; sleep 3; done
+          curl -fs localhost:8080/api/catalog
+          curl -fs localhost:8080/ | grep -q "Wx Analysis Console"
+      - if: always()
+        run: docker compose logs --no-color | tail -200
