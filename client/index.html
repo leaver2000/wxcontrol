@@ -37,14 +37,16 @@ button,select{font:inherit;color:inherit}
 .map.drag{cursor:grabbing}
 .ov{position:absolute;z-index:3;color:#eef3f6}
 .glass{background:rgba(14,20,27,.82);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.12);border-radius:10px}
-.layers{top:12px;right:12px;display:flex;flex-direction:column;padding:4px;gap:2px}
+.layers{top:12px;right:12px;display:grid;grid-template-columns:auto auto;align-items:start;padding:4px;gap:0 4px}
+.layers .lcol{display:flex;flex-direction:column;gap:2px}
+.layers .lh{font-size:11px;color:#9fb0bc;padding:5px 12px 2px}
 .layers button{all:unset;cursor:pointer;padding:8px 12px;border-radius:7px;font-size:14px;min-height:28px;display:flex;align-items:center;gap:8px}
 .layers button:hover{background:rgba(255,255,255,.08)}
 .layers button[aria-pressed=true]{background:var(--acc);color:#fff}
 .layers button:focus-visible{outline:2px solid #fff}
 .layers hr{border:0;border-top:1px solid rgba(255,255,255,.14);margin:3px 4px}
 .layers .tog[aria-pressed=true]{background:rgba(255,255,255,.16);color:#fff}
-.ladder{left:12px;top:62px;height:calc(100% - 150px);display:flex;flex-direction:column;padding:4px 0;width:70px;overflow:hidden}
+.ladder{left:12px;top:62px;bottom:96px;display:flex;flex-direction:column;padding:4px 0;width:70px;overflow:hidden}
 .ladder div{flex:1 1 0;min-height:0;max-height:20px;display:flex;align-items:center;justify-content:flex-end;padding:0 9px;font-size:12px;color:#9fb0bc;font-variant-numeric:tabular-nums;white-space:nowrap}
 .ladder div.minor{display:none}.ladder.tall.few div.minor{display:flex}.ladder div.on{display:flex;background:var(--acc);color:#fff;font-weight:600}
 .ladder p{margin:0 0 3px;font-size:11px;text-align:center;color:#c9d4dc;line-height:1.15}
@@ -52,6 +54,11 @@ button,select{font:inherit;color:inherit}
 .zoom button,.zoom select{background:rgba(14,20,27,.82);border:1px solid rgba(255,255,255,.14);color:#eef3f6;border-radius:8px;min-width:40px;height:40px;font-size:18px;cursor:pointer}
 .zoom select{font-size:14px;padding:0 8px}
 .legend{left:12px;bottom:12px;padding:8px 10px 6px;width:min(320px,calc(100% - 24px))}
+.prodlg{border-top:1px solid rgba(255,255,255,.14);margin-top:6px;padding-top:5px;font-size:12px;line-height:1.45;color:#d6e0e7}
+.prodlg:empty{display:none}.prodlg b{color:#fff;font-weight:600}
+.prodlg .row{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px}
+.sw{display:inline-block;width:14px;height:9px;border-radius:2px;vertical-align:middle}
+.ln{display:inline-block;width:18px;height:0;border-top:2px solid;vertical-align:middle}
 .legend .lt{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px}
 .legend canvas{position:static;display:block;width:100%;height:10px;border-radius:3px}
 .legend .tk{position:relative;height:16px;font-size:12px;color:#b8c6d0;font-variant-numeric:tabular-nums}
@@ -83,7 +90,7 @@ footer{padding:4px max(2vw,12px) 24px;font-size:13px;color:var(--mute);max-width
 footer details{margin-top:6px}footer summary{cursor:pointer;color:var(--ink)}
 footer code{font-size:12px}
 @media(max-width:1000px){.lower{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:600px){.ladder{display:none}.layers{flex-direction:row;flex-wrap:wrap;top:auto;bottom:118px;right:8px;left:8px;justify-content:center}.layers hr{display:none}.layers button{padding:6px 9px;font-size:13px}.when{bottom:auto;top:60px}.chip{flex:1 1 140px}.chip span{font-size:14px;white-space:normal}.map{height:72vh}.fig{height:520px}#metFig{height:640px}}
+@media(max-width:600px){.ladder{display:none}.layers{display:flex;flex-direction:row;flex-wrap:wrap;top:auto;bottom:150px;right:8px;left:8px;justify-content:center}.layers .lcol{display:contents}.layers .lh,.layers .ovx{display:none}.layers hr{display:none}.layers button{padding:6px 9px;font-size:13px}.when{bottom:auto;top:60px}.chip{flex:1 1 140px}.chip span{font-size:14px;white-space:normal}.map{height:72vh}.fig{height:520px}#metFig{height:640px}}
 @media(prefers-reduced-motion:reduce){.chip.flash{animation:none}}
 </style>
 </head>
@@ -108,7 +115,7 @@ footer code{font-size:12px}
   </div>
   <div class="ov layers glass" id="layers" role="group" aria-label="Map layer"></div>
   <div class="ov ladder glass" id="ladder" aria-label="Level shown (set from Skew-T or meteogram)"></div>
-  <div class="ov legend glass"><div class="lt"><span id="lgName"></span><span id="lgUnit"></span></div><canvas id="lgBar" width="300" height="10"></canvas><div class="tk" id="lgTicks"></div></div>
+  <div class="ov legend glass"><div class="lt"><span id="lgName"></span><span id="lgUnit"></span></div><canvas id="lgBar" width="300" height="10"></canvas><div class="tk" id="lgTicks"></div><div class="prodlg" id="prodLg"></div></div>
   <div class="ov when glass" id="when"></div>
 </section>
 
@@ -206,6 +213,9 @@ function Tbase(c,z){return z<c.ztp?c.T0-0.0062*z:c.T0-0.0062*c.ztp+0.0012*(z-c.z
 function Tp(c,p){const tl=0.375*(1-p/1000),at=AT(p);return at*(-Math.sin(c.th1+tl))*c.G1*c.a1+0.4*at*(-Math.sin(c.th2+tl))*c.G2-5.5*Math.max(0,c.m)*Math.exp(-(((p-520)/170)**2))*sig((41-c.lat)/3)}
 function Dd(c,p,z){let d=4+22*Math.pow(Math.max(0,1-p/1000),1.3);d*=c.m>0?1-0.55*c.m:1-0.9*c.m;if(p>700)d*=c.src;
   d*=1-0.88*c.W*Math.exp(-(((p-700)/330)**2));d+=25*clamp((z-c.ztp)/1800,0,1);return Math.max(0.3,d)}
+function omegaP(c,p){ // Pa/s, negative = rising; synthetic: ascent ahead of the trough, subsidence behind it
+  const vp=Math.sin(Math.PI*clamp((1000-p)/850,0,1)),dn=Math.pow(Math.max(0,Math.sin(c.th1+0.27)),2)*c.G1*c.a1*0.5;
+  return(-1.1*c.W+0.45*dn)*vp}
 function diurn(c,zagl){return c.dA*(c.dA>0?Math.exp(-zagl/1000):Math.exp(-zagl/220))}
 function fric(u,v,zagl,land){if(zagl>=1200)return[u,v];const q=zagl/1200,fac=lerp(land>0.5?0.5:0.68,1,q),a=(land>0.5?32:18)*(1-q)*D2R,cs=Math.cos(a),sn=Math.sin(a);return[(u*cs-v*sn)*fac,(u*sn+v*cs)*fac]}
 function capw(w){const s=Math.hypot(w[0],w[1]);return s>90?[w[0]*90/s,w[1]*90/s]:w}
@@ -237,7 +247,7 @@ const gridCache=new Map();
 function synthGrid(li,t){
   const key=li+'_'+t;let G=gridCache.get(key);if(G)return G;
   const N=NX*NY,p=li?PL_SYN[li-1]:1000,C=new Array(N),Zw=new Float32Array(N);
-  G={li,t,g:{lon0:LON0,lat0:LAT0,dlon:DG,dlat:DG,nx:NX,ny:NY},T:new Float32Array(N),RH:new Float32Array(N),U:new Float32Array(N),V:new Float32Array(N),S:new Float32Array(N),CF:new Float32Array(N),PR:new Float32Array(N),SN:new Uint8Array(N),ISO:new Float32Array(N),BG:new Uint8Array(N)};
+  G={li,t,g:{lon0:LON0,lat0:LAT0,dlon:DG,dlat:DG,nx:NX,ny:NY},W:new Float32Array(N).fill(NaN),T:new Float32Array(N),RH:new Float32Array(N),U:new Float32Array(N),V:new Float32Array(N),S:new Float32Array(N),CF:new Float32Array(N),PR:new Float32Array(N),SN:new Uint8Array(N),ISO:new Float32Array(N),BG:new Uint8Array(N)};
   for(let j=0;j<NY;j++)for(let i=0;i<NX;i++){const k=j*NX+i,c=ctx(LON0+i*DG,LAT0+j*DG,t);C[k]=c;Zw[k]=zTot(c,p)}
   const dz=(k,i,j)=>{const iE=Math.min(i+1,NX-1),iW=Math.max(i-1,0),jN=Math.min(j+1,NY-1),jS=Math.max(j-1,0);return[Zw[j*NX+iE],Zw[j*NX+iW],Zw[jN*NX+i],Zw[jS*NX+i],(iE-iW)/2,(jN-jS)/2]};
   for(let j=0;j<NY;j++)for(let i=0;i<NX;i++){
@@ -252,7 +262,7 @@ function synthGrid(li,t){
       G.CF[k]=clamp(mx*0.7+0.3*(1-pr),0,1);G.PR[k]=s.pr;G.SN[k]=s.snow?1:0;
     }else{
       const L=lvl(c,p,ps),w=capw(fric(ug,vg,L.zagl,c.land));
-      G.T[k]=L.T;G.RH[k]=L.rh;G.U[k]=w[0];G.V[k]=w[1];G.ISO[k]=L.z;G.CF[k]=L.cf;G.BG[k]=L.bg?1:0;
+      G.T[k]=L.T;G.RH[k]=L.rh;G.U[k]=w[0];G.V[k]=w[1];G.ISO[k]=L.z;G.CF[k]=L.cf;G.BG[k]=L.bg?1:0;G.W[k]=omegaP(c,p);
       const s=sfcState(c,ps,0,0);G.PR[k]=s.pr;G.SN[k]=s.snow?1:0;
     }
     G.S[k]=Math.hypot(G.U[k],G.V[k]);
@@ -287,17 +297,18 @@ function pointToCols(js){const byF=new Map(js.steps.map(s=>[s.fhr,s]));
     return{lon:js.lon,lat:js.lat,t:f,h,ps,mslp:nn(s.sfc.mslp),sh,srv:s.parcel,lev,
       sfc:{p:ps,z:h,zagl:0,T,Td,u:nn(s.sfc.u),v:nn(s.sfc.v),rh:rhf(T,Td),gust:nn(s.sfc.gust),pr:nn(s.sfc.pr)||0,snow:!!s.sfc.snow,tcc:nn(s.sfc.tcc)||0,refc:nn(s.sfc.refc)}}})}
 const LAYER_BANDS={wind:'',temp:'t',rh:'rh',clouds:'cf',precip:'pr,sn',cape:'sbcape',refc:'refc'};
-const gridKey=(li,t)=>`${SRC.model}|${SRC.run}|${STEPS[t]}|${li?PL[li-1]:'sfc'}|${LAYER_BANDS[layer]}`;
+function wantBands(){const o=ov(),b=['u','v','iso','bg'];if(LAYER_BANDS[layer])b.push(...LAYER_BANDS[layer].split(','));if(o.temp)b.push('t');if(o.omega&&S.z)b.push('w');return[...new Set(b)].join(',')}
+const gridKey=(li,t)=>`${SRC.model}|${SRC.run}|${STEPS[t]}|${li?PL[li-1]:'sfc'}|${wantBands()}`;
 function remoteGrid(li,t){if(t<0||t>=NT)return null;const k=gridKey(li,t),g=SRC.grids.get(k);if(g)return g.error?null:g;fetchGrid(k,li,t);return null}
 function fetchGrid(k,li,t){if(SRC.pending.has(k))return;SRC.pending.add(k);
-  const bands=['u','v','iso','bg'].concat(LAYER_BANDS[layer]?LAYER_BANDS[layer].split(','):[]).join(','),res=Math.max(0.03,(DOM.lon1-DOM.lon0)/720).toFixed(3);
+  const bands=wantBands(),res=Math.max(0.03,(DOM.lon1-DOM.lon0)/720).toFixed(3);
   getJSON(`${API}/map?model=${enc(SRC.model)}&run=${enc(SRC.run)}&fhr=${STEPS[t]}&level=${li?PL[li-1]:'sfc'}&bands=${bands}&res=${res}`)
     .then(js=>SRC.grids.set(k,mapToGrid(js)))
     .catch(e=>{SRC.grids.set(k,{error:true});setStatus('Map: '+(e.message||e))})
     .finally(()=>{SRC.pending.delete(k);if(SRC.grids.size>48)SRC.grids.delete(SRC.grids.keys().next().value);mapDirty.grid=1;sched()})}
 function b64f32(s){const bin=atob(s),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Float32Array(u.buffer)}
 function mapToGrid(js){const N=js.nx*js.ny,B=js.bands,get=k=>B[k]?b64f32(B[k]):new Float32Array(N).fill(NaN);
-  const G={g:{lon0:js.lon0+js.dlon/2,lat0:js.lat0+js.dlat/2,dlon:js.dlon,dlat:js.dlat,nx:js.nx,ny:js.ny},U:get('u'),V:get('v'),ISO:get('iso'),BG:get('bg'),T:get('t'),RH:get('rh'),CF:get('cf'),PR:get('pr'),SN:get('sn'),CAPE:get('sbcape'),REFC:get('refc'),S:new Float32Array(N)};
+  const G={g:{lon0:js.lon0+js.dlon/2,lat0:js.lat0+js.dlat/2,dlon:js.dlon,dlat:js.dlat,nx:js.nx,ny:js.ny},U:get('u'),V:get('v'),W:get('w'),ISO:get('iso'),BG:get('bg'),T:get('t'),RH:get('rh'),CF:get('cf'),PR:get('pr'),SN:get('sn'),CAPE:get('sbcape'),REFC:get('refc'),S:new Float32Array(N)};
   for(let i=0;i<N;i++){G.S[i]=Math.hypot(G.U[i],G.V[i]);if(G.BG[i]!==G.BG[i])G.BG[i]=0;if(G.SN[i]!==G.SN[i])G.SN[i]=0}
   return G}
 
@@ -350,7 +361,7 @@ for(const k in LAYERS){const L=LAYERS[k],lo=L.stops[0][0],hi=L.stops[L.stops.len
   for(let i=0;i<256;i++){const v=lo+(hi-lo)*i/255;let s=1;while(s<L.stops.length-1&&L.stops[s][0]<v)s++;const[a,ca]=L.stops[s-1],[b,cb]=L.stops[s],f=clamp((v-a)/(b-a||1),0,1);for(let q=0;q<3;q++)lut[i*3+q]=ca[q]+(cb[q]-ca[q])*f}
   Object.assign(L,{lo,hi,lut})}
 const SNOWLUT=(()=>{const l=new Uint8ClampedArray(256*3);for(let i=0;i<256;i++){const f=Math.min(1,i/90);l[i*3]=42+f*(225-42);l[i*3+1]=52+f*(120-52);l[i*3+2]=72+f*(235-72)}return l})();
-let layer='wind',showIso=true,showPart=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+let layer='wind',showPart=!matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ================= MAP ================= */
 const mapEl=document.getElementById('map'),cF=document.getElementById('cField'),cL=document.getElementById('cLines'),cP=document.getElementById('cPart');
@@ -365,7 +376,7 @@ let G=null;
 function drawField(){
   const L=LAYERS[layer],sc=3,w=Math.ceil(MW/sc),h=Math.ceil(MH/sc);
   const off=drawField.off||(drawField.off=document.createElement('canvas'));off.width=w;off.height=h;const ox=off.getContext('2d'),img=ox.createImageData(w,h),D=img.data;
-  const A=G[L.f],span=L.hi-L.lo,isP=layer==='precip',g=G.g,n=g.nx;
+  const A=G[L.f],span=L.hi-L.lo,isP=layer==='precip',g=G.g,n=g.nx,dim=fillsActive(ov());
   const lons=new Float32Array(w);for(let i=0;i<w;i++)lons[i]=view.clon+((i+.5)*sc-MW/2)/view.k;
   for(let j=0;j<h;j++){const lat=imY(view.cy-((j+.5)*sc-MH/2)/view.k);const fy=(lat-g.lat0)/g.dlat;
     for(let i=0;i<w;i++){const o=(j*w+i)*4,fx=(lons[i]-g.lon0)/g.dlon;
@@ -376,44 +387,127 @@ function drawField(){
       const nI=clamp(((v-L.lo)/span*255)|0,0,255);let lut=L.lut;
       if(isP&&G.SN[q]&&v>0.05)lut=SNOWLUT;
       const bg=(G.BG[q]*(1-a)+G.BG[q+1]*a)*(1-b)+(G.BG[q+n]*(1-a)+G.BG[q+n+1]*a)*b,m=1-0.58*bg;
-      D[o]=lut[nI*3]*m;D[o+1]=lut[nI*3+1]*m;D[o+2]=lut[nI*3+2]*m;D[o+3]=255}}
+      let r=lut[nI*3]*m,gg=lut[nI*3+1]*m,bl=lut[nI*3+2]*m;
+      if(dim){const y=.3*r+.59*gg+.11*bl;r=(r*.35+y*.65)*.5;gg=(gg*.35+y*.65)*.5;bl=(bl*.35+y*.65)*.55}
+      D[o]=r;D[o+1]=gg;D[o+2]=bl;D[o+3]=255}}
   ox.putImageData(img,0,0);
   const{x}=fitCanvas(cF);x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';x.drawImage(off,0,0,w*sc,h*sc);
 }
+/* ================= standard level products =================
+   Overlays drawn over the base field. "Standard" picks them by level, like the usual analysis
+   charts; any manual toggle switches to a hand-picked set. Derived fields and contour segments
+   are cached on the grid object, so panning and zooming only re-project. */
+const OVL=[['hgt','Heights'],['temp','Isotherms'],['isotach','Isotachs / jets'],['omega','Vertical velocity'],['vadv','Vort. advection']];
+let ovAuto=true,ovMan={hgt:1};
+const levP=()=>S.z?PL[S.z-1]:0; // 0 = surface
+function stdProducts(p){if(!p)return{hgt:1,temp:1};if(p>=800)return{hgt:1,temp:1,isotach:1};if(p>=600)return{hgt:1,temp:1,omega:1};if(p>=400)return{hgt:1,vadv:1};return{hgt:1,isotach:1}}
+const ov=()=>ovAuto?stdProducts(levP()):ovMan;
+const jetMode=p=>!p||p>=800?'llj':p<=400?'jet':'mid';
+const ISOTACH={ // kt: shaded thresholds, contour start/step, minimum speed labelled as a jet maximum
+  llj:{fill:[30,40,50,60,70],from:30,step:10,max:40,tag:'LLJ',cols:[[255,214,90,.24],[255,160,60,.34],[255,96,60,.44],[226,56,150,.52],[160,50,210,.58]]},
+  jet:{fill:[70,90,110,130,150],from:50,step:20,max:70,tag:'J',cols:[[110,190,255,.26],[60,125,255,.36],[140,80,255,.46],[250,80,235,.52],[255,255,255,.6]]},
+  mid:{fill:[50,70,90],from:30,step:20,max:50,tag:'J',cols:[[110,190,255,.22],[60,125,255,.32],[140,80,255,.42]]}};
+const VADV={lv:[2,5,10,20],pos:[[255,110,100,.2],[255,70,70,.3],[235,40,50,.4],[200,20,70,.5]],neg:[[110,160,255,.2],[70,125,255,.3],[45,90,235,.4],[60,40,200,.5]]}; // ×1e-9 s⁻²
+const OMEGA={up:[-20,-10,-5,-2],dn:[2,5,10]}; // μb/s
+function smoothF(A,nx,ny,passes){let a=A;for(let p=0;p<passes;p++){const b=new Float32Array(a.length);
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const k=j*nx+i;if(a[k]!==a[k]){b[k]=NaN;continue}let s=0,w=0;
+    for(let dj=-1;dj<=1;dj++){const jj=j+dj;if(jj<0||jj>=ny)continue;for(let di=-1;di<=1;di++){const ii=i+di;if(ii<0||ii>=nx)continue;const v=a[jj*nx+ii];if(v!==v)continue;const ww=(di?1:2)*(dj?1:2);s+=v*ww;w+=ww}}b[k]=s/w}
+  a=b}return a}
+function vortAdv(G,passes){ // absolute vorticity advection -V·∇(ζ+f), ×1e-9 s⁻² (positive = PVA)
+  const{nx,ny,lon0,lat0,dlon,dlat}=G.g,n=nx*ny,u=smoothF(G.U,nx,ny,passes),v=smoothF(G.V,nx,ny,passes),eta=new Float32Array(n).fill(NaN),out=new Float32Array(n).fill(NaN),Re=6.371e6;
+  for(let j=1;j<ny-1;j++){const la=(lat0+j*dlat)*D2R,dx=2*Re*Math.cos(la)*dlon*D2R,dy=2*Re*dlat*D2R;
+    for(let i=1;i<nx-1;i++){const k=j*nx+i;eta[k]=(v[k+1]-v[k-1])/dx-(u[k+nx]-u[k-nx])/dy+u[k]*Math.tan(la)/Re+2*OM*Math.sin(la)}}
+  for(let j=2;j<ny-2;j++){const la=(lat0+j*dlat)*D2R,dx=2*Re*Math.cos(la)*dlon*D2R,dy=2*Re*dlat*D2R;
+    for(let i=2;i<nx-2;i++){const k=j*nx+i;out[k]=-(u[k]*(eta[k+1]-eta[k-1])/dx+v[k]*(eta[k+nx]-eta[k-nx])/dy)*1e9}}
+  return smoothF(out,nx,ny,Math.max(1,passes>>1))}
+function dField(G,k){G._d||(G._d={});if(G._d[k])return G._d[k];const g=G.g,n=g.nx*g.ny,fine=g.dlon<0.3;let A=new Float32Array(n);
+  if(k==='kt'){for(let i=0;i<n;i++)A[i]=G.S[i]*KT;A=smoothF(A,g.nx,g.ny,fine?2:0)}
+  else if(k==='omega'){for(let i=0;i<n;i++)A[i]=G.W?G.W[i]*10:NaN;A=smoothF(A,g.nx,g.ny,fine?6:1)} // Pa/s -> μb/s
+  else if(k==='vadv')A=vortAdv(G,fine?5:1);
+  return G._d[k]=A}
+function rangeOf(G,A,key){G._r||(G._r={});if(G._r[key])return G._r[key];let lo=Infinity,hi=-Infinity;for(const v of A){if(v<lo)lo=v;if(v>hi)hi=v}return G._r[key]=[lo,hi]}
+function segsOf(G,A,key,lv){G._c||(G._c={});const k=key+'@'+lv;if(!G._c[k]){const g=G.g,seg=[];contour((i,j)=>A[j*g.nx+i],g.nx,g.ny,lv,(i,j)=>i,(i,j)=>j,seg);G._c[k]=seg}return G._c[k]}
+function drawContours(x,A,key,levels,style,fmt,labels,pri){
+  const g=G.g,pg=(i,j)=>proj(g.lon0+i*g.dlon,g.lat0+j*g.dlat),every=Math.max(46,Math.round(g.nx/3));
+  for(const lv of levels){const seg=segsOf(G,A,key,lv);if(!seg.length)continue;const st=style(lv);x.strokeStyle=st.c;x.lineWidth=st.w;x.setLineDash(st.d||[]);x.beginPath();
+    for(let q=0;q<seg.length;q+=2){const a=pg(seg[q][0],seg[q][1]),b=pg(seg[q+1][0],seg[q+1][1]);x.moveTo(a[0],a[1]);x.lineTo(b[0],b[1])}x.stroke();
+    if(fmt)for(let q=0;q<seg.length;q+=every){const a=pg((seg[q][0]+seg[q+1][0])/2,(seg[q][1]+seg[q+1][1])/2);if(a[0]>30&&a[1]>30&&a[0]<MW-90&&a[1]<MH-30)labels.push([a[0],a[1],fmt(lv),st.lc||'#fff',pri])}}
+  x.setLineDash([])}
+function stepLevels(lo,hi,iv,from){const out=[];if(!(hi>=lo))return out;for(let v=Math.ceil(Math.max(lo,from??-Infinity)/iv)*iv;v<=hi;v+=iv)out.push(+v.toFixed(6));return out}
+function drawFills(x,o){
+  const fills=[];
+  if(o.isotach){const m=ISOTACH[jetMode(levP())];fills.push([dField(G,'kt'),v=>{for(let i=m.fill.length-1;i>=0;i--)if(v>=m.fill[i])return m.cols[i];return null}])}
+  if(o.vadv&&S.z)fills.push([dField(G,'vadv'),v=>{const a=Math.abs(v);for(let i=VADV.lv.length-1;i>=0;i--)if(a>=VADV.lv[i])return(v>0?VADV.pos:VADV.neg)[i];return null}]);
+  if(!fills.length)return;
+  const sc=3,w=Math.ceil(MW/sc),h=Math.ceil(MH/sc),off=drawFills.off||(drawFills.off=document.createElement('canvas'));off.width=w;off.height=h;
+  const ox=off.getContext('2d'),img=ox.createImageData(w,h),D=img.data,g=G.g,n=g.nx;
+  for(let j=0;j<h;j++){const lat=imY(view.cy-((j+.5)*sc-MH/2)/view.k),fy=(lat-g.lat0)/g.dlat;if(fy<0||fy>g.ny-1)continue;
+    for(let i=0;i<w;i++){const fx=(view.clon+((i+.5)*sc-MW/2)/view.k-g.lon0)/g.dlon;if(fx<0||fx>n-1)continue;
+      const ii=Math.min(fx|0,n-2),jj=Math.min(fy|0,g.ny-2),a=fx-ii,b=fy-jj,q=jj*n+ii;let col=null;
+      for(const[A,f]of fills){const v=(A[q]*(1-a)+A[q+1]*a)*(1-b)+(A[q+n]*(1-a)+A[q+n+1]*a)*b;if(v===v){const c=f(v);if(c)col=c}}
+      if(col){const o4=(j*w+i)*4;D[o4]=col[0];D[o4+1]=col[1];D[o4+2]=col[2];D[o4+3]=col[3]*255}}}
+  ox.putImageData(img,0,0);x.imageSmoothingEnabled=true;x.drawImage(off,0,0,w*sc,h*sc)}
+function jetMaxima(x){ // label the core of each jet streak / low-level jet: the maximum of its ~5° block that beats its neighbours
+  const m=ISOTACH[jetMode(levP())],A=dField(G,'kt'),g=G.g,bs=Math.max(3,Math.round(5/g.dlon)),bx=Math.ceil(g.nx/bs),by=Math.ceil(g.ny/bs),best=new Array(bx*by).fill(null);
+  for(let j=0;j<g.ny;j++)for(let i=0;i<g.nx;i++){const v=A[j*g.nx+i];if(!(v>=m.max))continue;const b=((j/bs)|0)*bx+((i/bs)|0);if(!best[b]||v>best[b][0])best[b]=[v,i,j]}
+  x.font=`700 12px ${FONT}`;x.textAlign='center';x.textBaseline='middle';
+  for(let b=0;b<best.length;b++){const c=best[b];if(!c)continue;const cbx=b%bx,cby=(b/bx)|0;let top=true;
+    for(let dj=-1;dj<=1&&top;dj++)for(let di=-1;di<=1;di++){if(!di&&!dj)continue;if(cbx+di<0||cbx+di>=bx||cby+dj<0||cby+dj>=by)continue;const nb=(cby+dj)*bx+cbx+di;if(best[nb]&&best[nb][0]>c[0]){top=false;break}}
+    if(!top)continue;const[a,bb]=proj(g.lon0+c[1]*g.dlon,g.lat0+c[2]*g.dlat);if(a<10||bb<10||a>MW-10||bb>MH-10)continue;
+    const t=`${m.tag} ${Math.round(c[0])}`;x.lineWidth=3.5;x.strokeStyle='rgba(10,14,20,.85)';x.strokeText(t,a,bb);x.fillStyle='#ffe066';x.fillText(t,a,bb)}}
+function drawProducts(x,o){
+  const labels=[],p=levP(),A=G.ISO;
+  if(o.isotach){const m=ISOTACH[jetMode(p)],K=dField(G,'kt'),[lo,hi]=rangeOf(G,K,'kt');drawContours(x,K,'kt',stepLevels(lo,hi,m.step,m.from),()=>({c:'rgba(255,240,150,.85)',w:1,lc:'#ffe9a0'}),v=>v,labels,3)}
+  if(o.omega&&S.z){const W=dField(G,'omega');drawContours(x,W,'w',[...OMEGA.up,...OMEGA.dn],v=>v<0?{c:'#ffd23c',w:1.5,lc:'#ffd23c'}:{c:'#7fd3ff',w:1.1,d:[5,4],lc:'#a8e2ff'},v=>v,labels,2)}
+  if(o.temp){const T=G.T,[lo,hi]=rangeOf(G,T,'t');drawContours(x,T,'t',stepLevels(lo,hi,5),v=>v===0?{c:'#4da3ff',w:2.2,lc:'#8cc4ff'}:v<0?{c:'rgba(120,180,255,.85)',w:1,d:[6,4],lc:'#a9cfff'}:{c:'rgba(255,140,120,.9)',w:1,d:[6,4],lc:'#ffb1a3'},v=>v+'°',labels,1)}
+  if(o.hgt){const iv=!p?4:p>=700?30:p>=400?60:120,[lo,hi]=rangeOf(G,A,'iso');drawContours(x,A,'iso',stepLevels(lo,hi,iv),()=>({c:'rgba(255,255,255,.82)',w:1.2}),v=>!p?String(Math.round(v)):String(Math.round(v/10)),labels,0)}
+  x.font=`600 11px ${FONT}`;x.textAlign='center';x.textBaseline='middle';const placed=[];labels.sort((a,b)=>a[4]-b[4]);
+  for(const[l0,l1,t,c]of labels){if(placed.some(q=>Math.abs(q[0]-l0)<48&&Math.abs(q[1]-l1)<18))continue;placed.push([l0,l1]);x.lineWidth=3;x.strokeStyle='rgba(10,14,20,.82)';x.strokeText(t,l0,l1);x.fillStyle=c;x.fillText(t,l0,l1)}
+  if(o.isotach)jetMaxima(x)}
+function prodLegend(o){const el=document.getElementById('prodLg'),p=levP(),rows=[];
+  const sw=c=>`<span class="sw" style="background:rgba(${c[0]},${c[1]},${c[2]},${Math.min(1,c[3]*1.8)})"></span>`,ln=(c,d)=>`<span class="ln" style="border-top-color:${c};border-top-style:${d?'dashed':'solid'}"></span>`;
+  if(o.hgt)rows.push(`${ln('#fff')} ${p?`Heights, ${p>=700?3:p>=400?6:12} dam`:'Isobars, 4 hPa'}`);
+  if(o.temp)rows.push(`${ln('#ff8c78',1)}${ln('#78b4ff',1)} Isotherms 5 °C, ${ln('#4da3ff')} 0 °C`);
+  if(o.isotach){const m=ISOTACH[jetMode(p)];rows.push(`Isotachs ${m.fill.map((v,i)=>sw(m.cols[i])+v).join(' ')} kt · <b>${m.tag}</b> = max`)}
+  if(o.omega&&S.z)rows.push(`ω ${ln('#ffd23c')} rising ${ln('#7fd3ff',1)} sinking, μb/s`);
+  if(o.vadv&&S.z)rows.push(`${sw(VADV.pos[2])} PVA ${sw(VADV.neg[2])} NVA, ±${VADV.lv.join('/')}×10⁻⁹ s⁻²`);
+  const head=rows.length?`<div><b>${ovAuto?'Standard':'Custom'} products · ${levName(S.z)}</b></div>`:'';
+  const html=head+rows.map(r=>`<div class="row">${r}</div>`).join('');if(el.innerHTML!==html)el.innerHTML=html;
+  ladder.style.bottom=(document.querySelector('.legend').offsetHeight+24)+'px'}
+function fillsActive(o){return!!(o.isotach||(S.z&&(o.vadv||o.omega)))} // shaded products and ω mute the base field so they stay legible
+function ovButtons(){const o=ov();for(const b of layerBtns.querySelectorAll('[data-o]')){const k=b.dataset.o;b.setAttribute('aria-pressed',k==='auto'?ovAuto:!!o[k])}}
 function drawLines(){
-  const{x}=fitCanvas(cL);x.clearRect(0,0,MW,MH);x.lineJoin='round';
+  const{x}=fitCanvas(cL);x.clearRect(0,0,MW,MH);x.lineJoin='round';const o=ov();
+  if(G)drawFills(x,o);
   const sets=[[decoded[2],'rgba(255,255,255,.22)',0.7],[decoded[1],'rgba(255,255,255,.45)',0.9],[decoded[0],'rgba(255,255,255,.7)',1.1]];
   for(const[ls,col,w]of sets){x.strokeStyle=col;x.lineWidth=w;x.beginPath();for(const l of ls){l.forEach((p,i)=>{const[a,b]=proj(p[0],p[1]);i?x.lineTo(a,b):x.moveTo(a,b)})}x.stroke()}
   // domain frame
   const[a0,b0]=proj(DOM.lon0,DOM.lat1),[a1,b1]=proj(DOM.lon1,DOM.lat0);x.strokeStyle='rgba(255,255,255,.25)';x.setLineDash([4,4]);x.strokeRect(a0,b0,a1-a0,b1-b0);x.setLineDash([]);
-  if(showIso){
-    const iv=S.z===0?4:PL[S.z-1]>=700?30:PL[S.z-1]>=400?60:120,A=G.ISO;let lo=Infinity,hi=-Infinity;for(const v of A){if(v<lo)lo=v;if(v>hi)hi=v}
-    const g=G.g,X=(i,j)=>proj(g.lon0+i*g.dlon,g.lat0+j*g.dlat)[0],Y=(i,j)=>proj(g.lon0+i*g.dlon,g.lat0+j*g.dlat)[1],F=(i,j)=>A[j*g.nx+i];
-    x.strokeStyle='rgba(255,255,255,.78)';x.lineWidth=1.1;const labels=[];
-    for(let lv=Math.ceil(lo/iv)*iv;lv<=hi;lv+=iv){const seg=[];contour(F,g.nx,g.ny,lv,X,Y,seg);x.beginPath();for(let q=0;q<seg.length;q+=2){x.moveTo(seg[q][0],seg[q][1]);x.lineTo(seg[q+1][0],seg[q+1][1])}x.stroke();
-      for(let q=0;q<seg.length;q+=Math.max(46,Math.round(g.nx/3))){const[p0,p1]=[seg[q],seg[q+1]],mx=(p0[0]+p1[0])/2,my=(p0[1]+p1[1])/2;if(mx>30&&my>30&&mx<MW-90&&my<MH-30)labels.push([mx,my,S.z===0?String(Math.round(lv)):String(Math.round(lv/10))])}}
-    x.font=`600 11px ${FONT}`;x.textAlign='center';x.textBaseline='middle';const placed=[];
-    for(const[l0,l1,t]of labels){if(placed.some(p=>Math.abs(p[0]-l0)<60&&Math.abs(p[1]-l1)<22))continue;placed.push([l0,l1]);x.lineWidth=3;x.strokeStyle='rgba(10,14,20,.8)';x.strokeText(t,l0,l1);x.fillStyle='#fff';x.fillText(t,l0,l1)}
-  }
+  if(G)drawProducts(x,o);
   // stations
   x.font=`500 11px ${FONT}`;x.textAlign='left';x.textBaseline='middle';
   for(const s of STN){const[a,b]=proj(s[3],s[2]);if(a<0||b<0||a>MW||b>MH)continue;x.fillStyle='#fff';x.beginPath();x.arc(a,b,2.4,0,7);x.fill();if(view.k>9){x.lineWidth=3;x.strokeStyle='rgba(10,14,20,.7)';x.strokeText(s[0],a+5,b);x.fillText(s[0],a+5,b)}}
+  prodLegend(o);ovButtons();
 }
 function placePin(){const[a,b]=proj(S.lon,S.lat),pin=document.getElementById('pin'),bu=document.getElementById('bubble');pin.style.left=a+'px';pin.style.top=b+'px';
   const col=column(S.lon,S.lat,S.t),st=stnNear(S.lat,S.lon);bu.replaceChildren();
   if(!col){const b=document.createElement('b');b.textContent=pointError()||'Loading…';const l3=document.createElement('div');l3.style.color='#9fb0bc';l3.textContent=(st?st[0]+' · ':'')+fmtLL(S.lat,S.lon);bu.append(b,l3)}else{
   const L=S.z?col.lev[S.z-1]:col.sfc,[dd,ss]=dirSpd(L.u,L.v);const b1=document.createElement('b');b1.textContent=`${L.T.toFixed(1)}°C · ${pad(Math.round(dd/10)*10%360,3)}° ${Math.round(ss*KT)} kt`;
   const l2=document.createElement('div');l2.textContent=`${levName(S.z)} · RH ${Math.round(L.rh)}%${S.z?` · ${Math.round(L.z)} m`:` · ${col.mslp.toFixed(1)} hPa`}${L.bg?' · below ground':''}`;
-  const l3=document.createElement('div');l3.style.color='#9fb0bc';l3.textContent=(st?st[0]+' · ':'')+fmtLL(S.lat,S.lon);bu.append(b1,l2,l3)}
+  const l3=document.createElement('div');l3.style.color='#9fb0bc';l3.textContent=(st?st[0]+' · ':'')+fmtLL(S.lat,S.lon);bu.append(b1,l2);
+  const o=ov(),pv=[];if(G&&S.z&&o.omega){const w=sampleG(G,dField(G,'omega'),S.lon,S.lat);if(w===w)pv.push(`ω ${w.toFixed(1)} μb/s`)}if(G&&S.z&&o.vadv){const a=sampleG(G,dField(G,'vadv'),S.lon,S.lat);if(a===a)pv.push(`${a>=0?'PVA':'NVA'} ${Math.abs(a).toFixed(1)}×10⁻⁹ s⁻²`)}
+  if(pv.length){const l4=document.createElement('div');l4.textContent=pv.join(' · ');bu.append(l4)}bu.append(l3)}
   bu.style.left=clamp(a,110,MW-110)+'px';bu.style.top=Math.max(b,96)+'px';bu.style.display=a<-20||a>MW+20||b<-20||b>MH+20?'none':'';pin.style.display=bu.style.display}
 function legend(){const L=LAYERS[layer],cv=document.getElementById('lgBar'),x=cv.getContext('2d'),gr=x.createLinearGradient(0,0,300,0);
   for(let i=0;i<=20;i++){const n=Math.round(i/20*255);gr.addColorStop(i/20,`rgb(${L.lut[n*3]},${L.lut[n*3+1]},${L.lut[n*3+2]})`)}x.fillStyle=gr;x.fillRect(0,0,300,10);
   document.getElementById('lgName').textContent=L.name+(layer==='precip'||layer==='refc'?' (surface)':layer==='cape'?' (surface-based)':layer==='clouds'&&!S.z?' (total)':'');document.getElementById('lgUnit').textContent=L.unit;
   const tk=document.getElementById('lgTicks');tk.replaceChildren(...L.ticks.map(v=>{const s=document.createElement('span');s.style.left=clamp((v-L.lo)/(L.hi-L.lo)*100,3,96)+'%';s.textContent=L.tl(v);return s}))}
 const layerBtns=document.getElementById('layers');
-layerBtns.innerHTML=Object.entries(LAYERS).map(([k,L])=>`<button data-l="${k}" aria-pressed="${k===layer}"${L.remote?' data-remote hidden':''}>${L.name}</button>`).join('')+`<hr><button class="tog" data-t="iso" aria-pressed="true">Isolines</button><button class="tog" data-t="part" aria-pressed="${showPart}">Particles</button>`;
+layerBtns.innerHTML='<div class="lcol"><div class="lh">Layer</div>'+Object.entries(LAYERS).map(([k,L])=>`<button data-l="${k}" aria-pressed="${k===layer}"${L.remote?' data-remote hidden':''}>${L.name}</button>`).join('')+
+  '</div><div class="lcol"><div class="lh">Overlays</div><button class="tog" data-o="auto" aria-pressed="true" title="Standard analysis products for the selected level">Standard</button>'+OVL.map(([k,n])=>`<button class="tog ovx" data-o="${k}">${n}</button>`).join('')+`<button class="tog" data-t="part" aria-pressed="${showPart}">Particles</button></div>`;
 layerBtns.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.l){layer=b.dataset.l;for(const q of layerBtns.querySelectorAll('[data-l]'))q.setAttribute('aria-pressed',q===b);mapDirty.field=1;if(SRC.mode!=='synthetic')mapDirty.grid=1;legend()}
-  else{const on=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',on);if(b.dataset.t==='iso')showIso=on;else{showPart=on;if(!on)fitCanvas(cP).x.clearRect(0,0,MW,MH)}}mapDirty.lines=1;sched()});
+  else if(b.dataset.o){const k=b.dataset.o;if(k==='auto'){ovAuto=!ovAuto;if(!ovAuto)ovMan={...stdProducts(levP())}}else{if(ovAuto){ovMan={...stdProducts(levP())};ovAuto=false}ovMan[k]=!ovMan[k]}mapDirty.field=1;if(SRC.mode!=='synthetic')mapDirty.grid=1}
+  else{const on=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',on);showPart=on;if(!on)fitCanvas(cP).x.clearRect(0,0,MW,MH)}mapDirty.lines=1;sched()});
 const ladder=document.getElementById('ladder');
 function buildLadder(){ladder.innerHTML='<p>Level<br>from Skew-T</p>'+[...PL].reverse().map((p,i)=>`<div data-z="${PL.length-i}"${[1000,925,850,700,500,400,300,250,200,150,100].includes(p)?'':' class="minor"'}>${p}h</div>`).join('')+'<div data-z="0">Surface</div>'}
 buildLadder();

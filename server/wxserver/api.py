@@ -106,7 +106,7 @@ def catalog():
 
 
 SFC_BANDS = {"t": "s_t2m", "td": "s_td2m", "u": "s_u10", "v": "s_v10", "iso": "s_mslp", "cf": "s_tcc", "pr": "s_prate", "sn": "s_csnow", "refc": "s_refc", "gust": "s_gust", "psfc": "s_psfc", "sbcape": "s_sbcape", "sbcin": "s_sbcin", "mucape": "s_mucape", "mlcape": "s_mlcape", "lcl": "s_lcl", "li": "s_li"}
-LEVEL_BANDS = {"t": "m_t", "td": "m_td", "u": "m_u", "v": "m_v", "iso": "m_z"}
+LEVEL_BANDS = {"t": "m_t", "td": "m_td", "u": "m_u", "v": "m_v", "iso": "m_z", "w": "m_w"}
 SFC_ONLY = {"pr", "sn", "refc", "gust", "psfc", "sbcape", "sbcin", "mucape", "mlcape", "lcl", "li"}
 
 
@@ -176,7 +176,8 @@ def map_fields(
         elif is_sfc and b in SFC_BANDS:
             out[b] = _b64(pick(SFC_BANDS[b]))
         elif not is_sfc and b in LEVEL_BANDS:
-            out[b] = _b64(pick(LEVEL_BANDS[b]))
+            if LEVEL_BANDS[b] in rg:  # runs ingested before a field was added simply lack it
+                out[b] = _b64(pick(LEVEL_BANDS[b]))
         elif not is_sfc and b in SFC_ONLY and b in SFC_BANDS:
             out[b] = _b64(pick(SFC_BANDS[b]))
     init = datetime.fromisoformat(a["init"])

@@ -32,6 +32,7 @@ LEVEL_VARS: dict[str, tuple[str, ...]] = {
     "q": ("SPFH",),
     "u": ("UGRD",),
     "v": ("VGRD",),
+    "w": ("VVEL",),  # pressure vertical velocity, Pa/s (optional)
 }
 
 SFC_VARS: tuple[SfcVar, ...] = (

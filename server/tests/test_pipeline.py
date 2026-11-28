@@ -83,6 +83,8 @@ def test_map_surface_and_level(client):
     js = client.get("/api/map", params={"model": "hrrr", "fhr": 1, "level": "500", "bands": "t,iso,bg,cf"}).json()
     z = _band(js, "iso")
     assert 5000 < np.nanmean(z) < 6200
+    w = _band(client.get("/api/map", params={"model": "hrrr", "fhr": 1, "level": "500", "bands": "w"}).json(), "w")
+    assert np.nanmin(w) < -0.3 and np.nanmax(w) > 0.1  # omega (Pa/s): rising south, sinking north
     bg = client.get("/api/map", params={"model": "hrrr", "fhr": 1, "level": "850", "bands": "bg"}).json()
     assert np.nanmax(_band(bg, "bg")) == 1.0  # terrain pokes through 850 hPa
 
