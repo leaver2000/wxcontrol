@@ -31,7 +31,7 @@ from .config import Settings
 
 log = logging.getLogger(__name__)
 
-LEVEL_KEYS = ("z", "t", "td", "u", "v")
+LEVEL_KEYS = ("z", "t", "td", "u", "v", "w")  # w: omega, Pa/s
 SFC_KEYS = ("t2m", "td2m", "u10", "v10", "psfc", "mslp", "gust", "prate", "csnow", "tcc", "refc")
 DERIVED_KEYS = ("sbcape", "sbcin", "mucape", "mlcape", "lcl", "li")
 MAP_CHUNK = 256

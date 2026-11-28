@@ -67,6 +67,8 @@ def fields(fhr: int, levels):
             "HGT": z, "TMP": t, "DPT": t - dep,
             "RH": 100 * np.exp(17.67 * (t - dep - 273.15) / (t - dep - 29.65) - 17.67 * (t - 273.15) / (t - 29.65)),
             "UGRD": 5 + 35 * (1 - p / 1000) + 0 * lat, "VGRD": 8 * np.sin(np.radians(lon * 3)) + 0 * lat,
+            # rising (negative omega) in the moist south, sinking in the north; peaks mid-troposphere
+            "VVEL": (0.4 - 1.2 * moist) * np.sin(np.pi * np.clip((1000 - p) / 850, 0, 1)),
         }
     psfc = 101300 * np.exp(-hgt / 8000)
     t2 = t0 - 0.0068 * hgt + 1.5
@@ -102,7 +104,7 @@ def make_bucket(root: Path, model: str, path_tmpl: str, run: datetime, fhrs, lev
         lv, sfc = fields(fhr, levels)
         lmsgs = []
         for p in levels:  # grouped by level, like the real files
-            for var in ("HGT", "TMP", "RH" if rrfs_style else "DPT", "UGRD", "VGRD"):
+            for var in ("HGT", "TMP", "RH" if rrfs_style else "DPT", "UGRD", "VGRD", "VVEL"):
                 lmsgs.append((var, f"{int(p)} mb", lv[p][var]))
         smsgs = [(v, l, a) for (v, l), a in sfc.items() if not (rrfs_style and v in ("MSLMA", "DPT")) and not (not rrfs_style and v == "PRMSL")]
         smsgs.append(("APCP", "surface", sfc[("PRATE", "surface")] * 3600))

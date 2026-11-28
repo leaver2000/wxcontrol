@@ -66,6 +66,9 @@ async def fetch_step(spec: ModelSpec, run: datetime, fhr: int, s: Settings, fetc
     for key, name in (("z", "HGT"), ("t", "TMP"), ("u", "UGRD"), ("v", "VGRD"), hum):
         found = idxmod.pressure_levels(lvl_e, name)
         level_pick[key] = {p: found[p] for p in levels if p in found}
+    vvel = idxmod.pressure_levels(lvl_e, "VVEL")  # optional: omega for vertical-motion products
+    if all(p in vvel for p in levels):
+        level_pick["w"] = {p: vvel[p] for p in levels}
 
     sfc_pick: dict[str, tuple[str, idxmod.Entry]] = {}
     for sv in spec.sfc_vars:
